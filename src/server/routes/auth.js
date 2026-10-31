@@ -1,0 +1,126 @@
+// server/routes/auth.js — Authentication routes
+const express = require('express');
+const { CLIENT_ID, GUILD_ID, ADMIN_ROLE_ID, WEB_ENABLED, OAUTH_ENABLED } = require('../../config');
+const { loginWithPassword, createBrowserSession, destroyBrowserSession, resolvePrincipal } = require('../../services/authService');
+const { getAuthorizeUrl, exchangeCode, consumeState, fetchGuildMember } = require('../integrations/discordOAuth');
+const { COOKIE_NAME, cookieSessionMiddleware } = require('../middleware/session');
+const { log } = require('../middleware/logger');
+const { authLimiter } = require('../middleware/rateLimit');
+
+const router = express.Router();
+
+// Cookie options
+function cookieOpts() {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure:   isProd,
+    sameSite: 'lax',
+    path:     '/',
+    maxAge:   8 * 60 * 60 * 1000, // 8 hours
+  };
+}
+
+// ─── POST /api/auth/login — Student ID + password login ────────────────────
+router.post('/login', authLimiter, async (req, res, next) => {
+  try {
+    const { studentId, password } = req.body || {};
+    if (!studentId || !password) {
+      return res.status(400).json({ error: 'Student ID and password are required' });
+    }
+
+    const clientRef = req.app.get('discordClient');
+    const principal = await loginWithPassword(studentId.trim(), password, clientRef);
+    if (!principal) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = createBrowserSession(principal);
+    res.cookie(COOKIE_NAME, token, cookieOpts());
+
+    log(`Login: studentId=${studentId}, role=${principal.role}`);
+    res.json({ principal });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/auth/logout ──────────────────────────────────────────────────
+router.post('/logout', (req, res) => {
+  const token = req.cookies[COOKIE_NAME];
+  if (token) destroyBrowserSession(token);
+  res.clearCookie(COOKIE_NAME);
+  res.json({ ok: true });
+});
+
+// ─── GET /api/auth/discord — Start Discord OAuth flow ───────────────────────
+router.get('/discord', (req, res) => {
+  if (!OAUTH_ENABLED) return res.status(503).json({ error: 'Discord OAuth is not configured' });
+
+  const linkStudentId = req.query.link === '1' ? req.query.studentId || null : null;
+  const auth = getAuthorizeUrl(linkStudentId);
+  if (!auth) return res.status(503).json({ error: 'Discord OAuth is not configured' });
+
+  res.redirect(auth.url);
+});
+
+// ─── GET /api/auth/discord/callback — OAuth callback ────────────────────────
+router.get('/discord/callback', async (req, res, next) => {
+  try {
+    const { code, state, error } = req.query;
+
+    if (error) return res.redirect('/?login_error=oauth_denied');
+    if (!code || !state) return res.redirect('/?login_error=oauth_missing_params');
+
+    const stateData = consumeState(state);
+    if (!stateData) return res.redirect('/?login_error=oauth_invalid_state');
+
+    const discordUser = await exchangeCode(code);
+    if (!discordUser) return res.redirect('/?login_error=oauth_exchange_failed');
+
+    // Verify guild membership via the bot client or Discord REST API fallback
+    const clientRef = req.app.get('discordClient');
+    let guildMember = null;
+    let principal = null;
+
+    if (clientRef) {
+      try {
+        const guild = await clientRef.guilds.fetch(GUILD_ID);
+        guildMember = await guild.members.fetch(discordUser.id);
+      } catch { /* not in guild */ }
+    } else {
+      guildMember = await fetchGuildMember(discordUser.id);
+    }
+
+    if (stateData.linkStudentId) {
+      // Account linking flow: the user already authenticated with password,
+      // now we link their Discord ID
+      // This is handled separately — for now just redirect
+      return res.redirect('/?link_status=success');
+    }
+
+    // Resolve principal based on Discord identity
+    principal = await resolvePrincipal(null, discordUser.id, guildMember);
+
+    if (!principal) {
+      // Discord account not linked to any student record and not a teacher
+      return res.redirect('/?login_error=discord_not_linked');
+    }
+
+    const token = createBrowserSession(principal);
+    res.cookie(COOKIE_NAME, token, cookieOpts());
+
+    log(`Discord OAuth login: discordId=${discordUser.id}, role=${principal.role}`);
+    res.redirect('/');
+  } catch (err) {
+    log('OAuth callback error:', err.message);
+    res.redirect('/?login_error=oauth_failed');
+  }
+});
+
+// ─── GET /api/auth/me — Current principal ───────────────────────────────────
+router.get('/me', cookieSessionMiddleware, (req, res) => {
+  res.json({ principal: req.principal || null });
+});
+
+module.exports = router;

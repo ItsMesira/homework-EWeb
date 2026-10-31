@@ -1,0 +1,79 @@
+/* tokens.css — Design tokens (Notion-style reference) */
+
+:root {
+  /* ─── Colors ─── */
+  --canvas:        #f6f5f4;
+  --card-surface:  #ffffff;
+  --primary:       #0075de;
+  --primary-hover: #0068c4;
+  --ghost-bg:      #e6f3fe;
+  --ghost-text:    #0075de;
+
+  --text-primary:   rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.65);
+  --text-muted:     #757575;
+  --text-faint:     #615d59;
+
+  --border:        rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+
+  /* Accent colors — used sparingly */
+  --accent-amber:  #ffb110;
+  --accent-red:    #f64932;
+  --accent-blue:   #62aef0;
+  --accent-navy:   #02093a;
+
+  /* Status colors */
+  --success:  #22c55e;
+  --warning:  #f59e0b;
+  --danger:   #ef4444;
+  --info:     #3b82f6;
+
+  /* ─── Spacing (base 4px) ─── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ─── Radius ─── */
+  --radius-card:   12px;
+  --radius-btn:    8px;
+  --radius-pill:   9999px;
+  --radius-input:  8px;
+  --radius-sm:     6px;
+
+  /* ─── Shadows — minimal, no card shadows on ordinary content ─── */
+  --shadow-none: none;
+  --shadow-pop:  0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-nav:  0 -2px 8px rgba(0, 0, 0, 0.06);
+
+  /* ─── Typography ─── */
+  --font-family: 'Noto Sans Thai', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:   'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  --fs-xs:   12px;
+  --fs-sm:   14px;
+  --fs-base: 16px;
+  --fs-lg:   18px;
+  --fs-xl:   22px;
+  --fs-2xl:  28px;
+  --fs-3xl:  34px;
+
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ─── Layout ─── */
+  --page-max-width: 1440px;
+  --sidebar-width: 240px;
+  --bottom-nav-height: 64px;
+
+  /* ─── Motion ─── */
+  --transition: 200ms ease;
+}

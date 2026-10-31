@@ -12,9 +12,11 @@
 //     on long-running deployments.
 
 const crypto = require('crypto');
-const { PermissionsBitField } = require('discord.js');
 const { SESSION_TIMEOUT, SHEETS, ADMIN_ROLE_ID, DEFAULT_CLASS_ID } = require('../config');
 const { readSheet } = require('../utils/sheets');
+
+// Discord Administrator permission bitflag (1n << 3n = 8n)
+const DISCORD_ADMIN_FLAG = 8n;
 
 // In-memory session store: { discordId -> { studentId, expiresAt } }
 const sessions = new Map();
@@ -39,6 +41,7 @@ function hashPassword(password) {
  * so existing users aren't locked out after the upgrade.
  */
 function verifyPassword(password, stored) {
+  if (!password || !stored || typeof stored !== 'string') return false;
   if (stored.includes(':')) {
     // New format: PBKDF2
     const [salt, expectedHash] = stored.split(':');
@@ -118,14 +121,14 @@ function isDiscordAdmin(member) {
     return true;
   }
 
-  // 3. Administrator permission check (handles PermissionsBitField instance or string bitfield)
+  // 3. Administrator permission check (handles Discord API bitfield or manager)
   if (member.permissions) {
     try {
       if (typeof member.permissions.has === 'function') {
-        if (member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
+        if (member.permissions.has(DISCORD_ADMIN_FLAG)) return true;
       } else {
-        const perms = new PermissionsBitField(BigInt(member.permissions));
-        if (perms.has(PermissionsBitField.Flags.Administrator)) return true;
+        const permsBigInt = BigInt(member.permissions);
+        if ((permsBigInt & DISCORD_ADMIN_FLAG) === DISCORD_ADMIN_FLAG) return true;
       }
     } catch { /* ignore bitfield parse error */ }
   }

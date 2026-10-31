@@ -3,7 +3,10 @@ const express = require('express');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireRole } = require('../middleware/requireRole');
 const { listHomework, getHomework, createHomework, updateHomework, deleteHomework } = require('../../services/homeworkService');
-const { sendNewHomeworkDM } = require('../../utils/reminders');
+let sendNewHomeworkDM = null;
+try {
+  sendNewHomeworkDM = require('../../utils/reminders').sendNewHomeworkDM;
+} catch { /* reminders utility is part of the standalone bot repo */ }
 const { audit } = require('../../services/notificationService');
 
 const router = express.Router();
@@ -43,7 +46,7 @@ router.post('/', requireRole('president', 'teacher'), async (req, res, next) => 
 
     // Fire Discord DM notification (fire-and-forget)
     const clientRef = req.app.get('discordClient');
-    if (clientRef) {
+    if (clientRef && sendNewHomeworkDM) {
       sendNewHomeworkDM(clientRef, hw).catch(() => {});
     }
 

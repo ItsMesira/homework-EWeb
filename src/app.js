@@ -101,7 +101,9 @@ function createApp() {
   }
 
   // ─── Static frontend (production) ─────────────────────────────────────────
-  const distPath = path.join(__dirname, '..', 'web', 'dist');
+  const distPath = fs.existsSync(path.join(__dirname, '..', 'dist'))
+    ? path.join(__dirname, '..', 'dist')
+    : path.join(__dirname, '..', 'web', 'dist');
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
 

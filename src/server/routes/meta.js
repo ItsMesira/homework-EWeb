@@ -1,7 +1,6 @@
 // server/routes/meta.js — Class metadata routes
 const express = require('express');
 const { getClass } = require('../../services/classService');
-const { cookieSessionMiddleware } = require('../middleware/session');
 
 const router = express.Router();
 

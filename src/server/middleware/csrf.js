@@ -53,7 +53,7 @@ function csrfProtection(req, res, next) {
   // the session cookie itself is the anti-CSRF mechanism for those routes.
   // The auth routes will be mounted before this middleware or exempted.
   const cookieToken = req.cookies[CSRF_COOKIE];
-  const headerToken = req.headers[CSRF_HEADER];
+  const headerToken = req.headers[CSRF_HEADER] || (req.body && req.body._csrf);
 
   if (!cookieToken || !headerToken) {
     return res.status(403).json({ error: 'CSRF token missing' });

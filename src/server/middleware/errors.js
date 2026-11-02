@@ -10,7 +10,8 @@ function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
   const status = err.statusCode || err.status || 500;
-  const message = status < 500 ? err.message : 'Internal server error';
+  const isDev = process.env.NODE_ENV !== 'production';
+  const message = (status < 500 || isDev) ? (err.message || 'Internal server error') : 'Internal server error';
 
   if (status >= 500) {
     log('[Error]', err.message, err.stack);

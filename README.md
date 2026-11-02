@@ -12,7 +12,7 @@ Designed to be hosted **100% serverlessly on Vercel**.
 - **Backend API**: Express v4 running as a Vercel Serverless Function (`api/index.js`)
 - **Database**: Google Sheets API v4 via Service Account
 - **Auth**: Discord OAuth2 + Student ID / Password credentials with PBKDF2 hashing
-- **PWA**: Installable Web App with Service Worker (`public/` & `web/public/`)
+- **PWA**: Installable Web App with Service Worker (`public/`, copied into `dist/` at build time)
 
 ---
 
@@ -20,7 +20,7 @@ Designed to be hosted **100% serverlessly on Vercel**.
 
 1. Push this repository to GitHub.
 2. In [Vercel](https://vercel.com): **New Project** → Select this repository.
-3. Vercel automatically detects the build command (`npm run build:web`) and output directory (`web/dist`).
+3. Vercel picks up `vercel.json` automatically: build command `npm run build`, output directory `dist`, and `/api/*` routed to the `api/index.js` serverless function.
 4. Under **Project Settings → Environment Variables**, add:
    - `GOOGLE_SHEET_ID`: Your Google Spreadsheet ID
    - `GOOGLE_CREDENTIALS`: Service Account JSON (single line)
@@ -38,20 +38,20 @@ Designed to be hosted **100% serverlessly on Vercel**.
 
 ## 💻 Local Development
 
-1. Install root and frontend dependencies:
+1. Install dependencies:
    ```bash
    npm install
-   cd web && npm install && cd ..
    ```
-2. Start the local backend API (port 3000):
+2. Copy `.env.example` to `.env` and fill in the required values.
+3. Start the local backend API (port 3000):
    ```bash
    npm run dev
    ```
-3. In a second terminal, start the Vite frontend (port 5173 with proxy to 3000):
+4. In a second terminal, start the Vite frontend (port 5173 with proxy to 3000):
    ```bash
    npm run dev:web
    ```
-4. Build for production:
+5. Build for production (outputs to `dist/`):
    ```bash
    npm run build
    ```

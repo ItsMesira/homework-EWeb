@@ -3,7 +3,7 @@ const express = require('express');
 const { requireRole } = require('../middleware/requireRole');
 const { listUsers, provisionUser, updateUser, deactivateUser, deleteUser } = require('../../services/userService');
 const { listPresidents, appointPresident, revokePresident, getClass } = require('../../services/classService');
-const { readSheet, appendRowRaw, updateRowRaw } = require('../../utils/sheets');
+const { readSheet, readSheetWithRows, appendRowRaw, updateRowRaw } = require('../../utils/sheets');
 const { SHEETS } = require('../../config');
 const { audit } = require('../../services/notificationService');
 
@@ -124,7 +124,7 @@ router.patch('/settings', async (req, res, next) => {
   try {
     const cls = await getClass();
     const classId = cls?.classId || 'MEP4-744';
-    const existing = await readSheet(SHEETS.SETTINGS);
+    const existing = await readSheetWithRows(SHEETS.SETTINGS);
     const updatedBy = req.principal.user.discordId;
     const { nowISO } = require('../../utils/dates');
 

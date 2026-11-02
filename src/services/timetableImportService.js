@@ -9,7 +9,7 @@
 //   6. Save as draft in TimetableImports sheet
 //   7. Teacher reviews → confirm (batch upsert) or reject
 
-const { SHEETS, DEFAULT_CLASS_ID, DEFAULT_TERM, DEFAULT_SCHOOL_YEAR, VISION_ENABLED, CLOUDINARY_ENABLED } = require('../config');
+const { SHEETS, DEFAULT_CLASS_ID, DEFAULT_TERM, DEFAULT_SCHOOL_YEAR, VISION_ENABLED, GEMINI_API_KEY, GEMINI_ENABLED, CLOUDINARY_ENABLED } = require('../config');
 const { readSheet, readSheetWithRows, appendRow, updateRow } = require('../utils/sheets');
 const { generateId, PREFIXES } = require('../utils/ids');
 const { nowISO } = require('../utils/dates');
@@ -19,6 +19,144 @@ const { batchUpsertCells, getTimetableGrid, MAX_PERIOD } = require('./timetableS
 const { normalizeSubjectCode } = require('./subjectService');
 
 const DAYS = 5; // Mon–Fri
+
+/**
+ * Extract timetable using Google AI Studio Gemini API (100% free, no credit card required).
+ */
+async function extractWithGemini(imageBuffer, apiKey) {
+  if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length < 8) {
+    const err = new Error('กรุณาระบุ Gemini API Key (สามารถรับฟรีได้ที่ https://aistudio.google.com โดยไม่ต้องกรอกบัตรเครดิต)');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanKey = apiKey.trim();
+  const base64Data = imageBuffer.toString('base64');
+
+  let mimeType = 'image/jpeg';
+  if (imageBuffer.length > 4) {
+    if (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 && imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47) {
+      mimeType = 'image/png';
+    } else if (imageBuffer[0] === 0x52 && imageBuffer[1] === 0x49 && imageBuffer[2] === 0x46 && imageBuffer[3] === 0x46) {
+      mimeType = 'image/webp';
+    }
+  }
+
+  const prompt = `You are an AI assistant specialized in analyzing Thai and English school timetables and schedules.
+Analyze this image of a school timetable.
+Extract the schedule into a 5-day (Day 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday) and 9-period (Period 1 to 9) grid.
+Output valid JSON ONLY matching this structure:
+{
+  "grid": {
+    "1": {
+      "1": { "cellType": "subject", "subjectCode": "ว31101", "label": "วิทยาศาสตร์", "instructor": "ครูสมศรี" }
+    }
+  }
+}
+Rules:
+- Days are numbered 1 (Monday/จันทร์), 2 (Tuesday/อังคาร), 3 (Wednesday/พุธ), 4 (Thursday/พฤหัสบดี), 5 (Friday/ศุกร์).
+- Periods are numbered 1 to 9.
+- cellType MUST be one of: "subject", "free", "lunch", "break", "activity".
+- If a period is lunch (พักกลางวัน, Lunch), set cellType="lunch", label="พักกลางวัน".
+- If a period is break/recess (พัก), set cellType="break", label="พัก".
+- If a period is activity/homeroom/guidance (แนะแนว, ชุมนุม, ลูกเสือ, กิจกรรม, โฮมรูม), set cellType="activity", label=name of activity.
+- If a period is empty or free or dash, set cellType="free", subjectCode="", label="", instructor="".
+- For subject periods:
+  - If there is a subject code (e.g. ว31101, ค31101, EN-101, MA201, SCI-1), put it in "subjectCode".
+  - If there is a subject title (e.g. ฟิสิกส์, คณิตศาสตร์, English), put it in "label".
+  - If there is a teacher/instructor name (e.g. ครูสมศรี, T. John), put it in "instructor".
+- Ensure ALL 5 days (1 to 5) and ALL 9 periods (1 to 9) are included in the returned grid.`;
+
+  // Dynamically discover supported models for this key
+  let candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-pro'];
+  try {
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      if (Array.isArray(listData.models) && listData.models.length > 0) {
+        const supported = listData.models
+          .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map((m) => m.name.replace(/^models\//, ''));
+        if (supported.length > 0) {
+          const preferred = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp'];
+          const matched = preferred.filter((p) => supported.includes(p));
+          candidateModels = [...matched, ...supported.filter((s) => !preferred.includes(s))];
+        }
+      }
+    } else {
+      const listErr = await listRes.json().catch(() => ({}));
+      const errMsg = listErr.error?.message || '';
+      if (listRes.status === 400 && errMsg.toLowerCase().includes('api key not valid')) {
+        const err = new Error('API Key ไม่ถูกต้อง กรุณาคัดลอกคีย์ฟรีจาก https://aistudio.google.com');
+        err.statusCode = 400;
+        throw err;
+      }
+    }
+  } catch (err) {
+    if (err.statusCode) throw err;
+  }
+
+  // Try API versions: v1beta and v1
+  const apiVersions = ['v1beta', 'v1'];
+  let lastError = null;
+
+  for (const version of apiVersions) {
+    for (const model of candidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${cleanKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType, data: base64Data } }
+              ]
+            }],
+            generationConfig: {
+              responseMimeType: 'application/json'
+            }
+          })
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          let parsedErr;
+          try { parsedErr = JSON.parse(errorText); } catch { /* ignore */ }
+          const apiMsg = parsedErr?.error?.message || errorText;
+          if (res.status === 400 && apiMsg.toLowerCase().includes('api key not valid')) {
+            const err = new Error('API Key ไม่ถูกต้อง กรุณารับคีย์ฟรีใหม่ที่ https://aistudio.google.com');
+            err.statusCode = 400;
+            throw err;
+          }
+          lastError = new Error(`${model} (${version}) error ${res.status}: ${apiMsg}`);
+          continue;
+        }
+
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) continue;
+
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.grid) {
+          return parsed.grid;
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+        lastError = err;
+        continue;
+      }
+    }
+  }
+
+  const userErr = new Error(
+    'ไม่สามารถเข้าถึงโมเดล Gemini ด้วย API Key นี้ได้ (หรือโปรเจกต์ยังไม่ได้เปิด Generative Language API) ' +
+    'แนะนำให้สร้าง API Key ฟรีโดยตรงที่ https://aistudio.google.com หรือใช้วิธี "วางจาก Sheets / Excel" (ฟรี 100% ไม่ต้องใช้ API)'
+  );
+  userErr.statusCode = 400;
+  throw userErr;
+}
 
 // ─── Grid reconstruction ─────────────────────────────────────────────────────
 
@@ -161,24 +299,49 @@ function reconstructGrid(blocks) {
 // ─── Import lifecycle ────────────────────────────────────────────────────────
 
 /**
- * Step 1-6: Upload image, run OCR, reconstruct grid, save as draft.
+ * Step 1-6: Upload image, run OCR (Gemini free API or Cloud Vision), reconstruct grid, save as draft.
  *
  * @param {Buffer} imageBuffer
  * @param {number} term
  * @param {number} schoolYear
  * @param {string} createdBy
+ * @param {string} geminiApiKey — Optional user-supplied Google AI Studio key
  * @returns {Promise<{ importId: string, draft: object }>}
  */
-async function createImport(imageBuffer, term = DEFAULT_TERM, schoolYear = DEFAULT_SCHOOL_YEAR, createdBy = '') {
-  if (!VISION_ENABLED) {
-    throw new Error('OCR import requires VISION_CREDENTIALS to be configured');
+async function createImport(imageBuffer, term = DEFAULT_TERM, schoolYear = DEFAULT_SCHOOL_YEAR, createdBy = '', geminiApiKey = '') {
+  let grid;
+  let blockCount = 0;
+  let ocrConfidence = 0.95;
+
+  const activeGeminiKey = geminiApiKey || GEMINI_API_KEY;
+
+  if (activeGeminiKey) {
+    const rawGrid = await extractWithGemini(imageBuffer, activeGeminiKey);
+    grid = {};
+    for (let day = 1; day <= DAYS; day++) {
+      grid[day] = {};
+      for (let period = 1; period <= MAX_PERIOD; period++) {
+        const c = rawGrid?.[day]?.[period] || rawGrid?.[String(day)]?.[String(period)] || {};
+        grid[day][period] = {
+          cellType: c.cellType || 'free',
+          subjectCode: c.subjectCode ? normalizeSubjectCode(c.subjectCode) : '',
+          label: c.label || '',
+          instructor: c.instructor || '',
+          confidence: 0.95,
+        };
+        if (grid[day][period].cellType !== 'free') blockCount++;
+      }
+    }
+  } else if (VISION_ENABLED) {
+    const ocrResult = await detectDocumentText(imageBuffer);
+    grid = reconstructGrid(ocrResult.blocks);
+    blockCount = ocrResult.blocks.length;
+    ocrConfidence = ocrResult.blocks.length > 0
+      ? ocrResult.blocks.reduce((sum, b) => sum + (b.confidence || 0), 0) / ocrResult.blocks.length
+      : 0;
+  } else {
+    throw new Error('OCR requires a Gemini API Key (get one for free with no credit card at https://aistudio.google.com) or Cloud Vision credentials.');
   }
-
-  // Step 2-3: Run OCR
-  const ocrResult = await detectDocumentText(imageBuffer);
-
-  // Step 4: Reconstruct grid
-  const grid = reconstructGrid(ocrResult.blocks);
 
   // Step 5: Deduplicate — mark cells that match existing timetable
   const existingGrid = await getTimetableGrid(term, schoolYear);
@@ -213,10 +376,8 @@ async function createImport(imageBuffer, term = DEFAULT_TERM, schoolYear = DEFAU
   const draft = {
     grid,
     duplicates,
-    ocrConfidence: ocrResult.blocks.length > 0
-      ? ocrResult.blocks.reduce((sum, b) => sum + (b.confidence || 0), 0) / ocrResult.blocks.length
-      : 0,
-    blockCount: ocrResult.blocks.length,
+    ocrConfidence,
+    blockCount,
   };
 
   await appendRow(SHEETS.TIMETABLE_IMPORTS, [

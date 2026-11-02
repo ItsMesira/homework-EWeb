@@ -8,18 +8,18 @@
 // Student status is the default for active class members.
 
 const crypto = require('crypto');
-const { SHEETS, ADMIN_ROLE_ID, GUILD_ID, DEFAULT_CLASS_ID, BROWSER_SESSION_IDLE, BROWSER_SESSION_ABSOLUTE } = require('../config');
+const { SHEETS, ADMIN_ROLE_ID, GUILD_ID, DEFAULT_CLASS_ID, BROWSER_SESSION_IDLE, BROWSER_SESSION_ABSOLUTE, SESSION_SECRET } = require('../config');
 const { readSheet } = require('../utils/sheets');
 const { hashPassword, verifyPassword, isDiscordAdmin } = require('../utils/auth');
 const { nowISO } = require('../utils/dates');
 const { generateId, PREFIXES } = require('../utils/ids');
 
-// In-memory browser session store (not the Discord session Map).
+// In-memory browser session store (acts as L1 cache for serverless & fast lookups)
 // key: sessionToken → { studentId, discordId, role, classId, createdAt, lastAccess }
 const browserSessions = new Map();
 
-// Cleanup expired sessions every 15 minutes
-setInterval(() => {
+// Cleanup expired sessions every 15 minutes (unref so it does not prevent serverless shutdown)
+const cleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [token, sess] of browserSessions) {
     if (now - sess.lastAccess > BROWSER_SESSION_IDLE || now - sess.createdAt > BROWSER_SESSION_ABSOLUTE) {
@@ -27,6 +27,7 @@ setInterval(() => {
     }
   }
 }, 15 * 60 * 1000);
+if (cleanupInterval.unref) cleanupInterval.unref();
 
 /**
  * Resolve a user's role from their studentId and Discord ID.
@@ -55,6 +56,11 @@ async function resolvePrincipal(studentId, discordId, guildMember) {
       (a) => a.studentId === user.studentId && a.classId === DEFAULT_CLASS_ID && !a.revokedAt
     );
     if (isActive) role = 'president';
+  }
+
+  // Deactivated accounts cannot sign in, even via Discord OAuth
+  if (user && user.isActive === 'false') {
+    return null;
   }
 
   // If user not found but is a teacher, they can still access
@@ -129,40 +135,83 @@ async function loginWithPassword(studentId, password, discordClient = null) {
   };
 }
 
+// Encode session payload as base64url + HMAC-SHA256 signature using SESSION_SECRET
+function signSessionPayload(data) {
+  const payloadStr = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(payloadStr).digest('base64url');
+  return `${payloadStr}.${signature}`;
+}
+
+function verifySessionPayload(token) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payloadStr, signature] = parts;
+  const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadStr).digest('base64url');
+  if (signature.length !== expectedSig.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) return null;
+
+  try {
+    const data = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
+    const now = Date.now();
+    if (data.exp && now > data.exp) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Create a browser session token.
+ * Create a browser session token (HMAC-signed for serverless resilience).
  * @returns {string} session token
  */
 function createBrowserSession(principal) {
-  const token = crypto.randomBytes(32).toString('hex');
-  browserSessions.set(token, {
+  const now = Date.now();
+  const sessionData = {
     studentId:  principal.user.studentId,
     discordId:  principal.user.discordId,
     role:       principal.role,
     classId:    principal.classId,
     firstName:  principal.user.firstName,
     lastName:   principal.user.lastName,
-    createdAt:  Date.now(),
-    lastAccess: Date.now(),
-  });
+    createdAt:  now,
+    lastAccess: now,
+    exp:        now + BROWSER_SESSION_ABSOLUTE,
+  };
+  const token = signSessionPayload(sessionData);
+  browserSessions.set(token, sessionData);
   return token;
 }
 
 /**
  * Get a browser session, refreshing idle expiry.
+ * Works seamlessly across Vercel serverless instances.
  * @returns {object | null}
  */
 function getBrowserSession(token) {
   if (!token) return null;
-  const sess = browserSessions.get(token);
-  if (!sess) return null;
   const now = Date.now();
-  if (now - sess.lastAccess > BROWSER_SESSION_IDLE || now - sess.createdAt > BROWSER_SESSION_ABSOLUTE) {
-    browserSessions.delete(token);
-    return null;
+
+  // 1. Check fast in-memory map
+  const sess = browserSessions.get(token);
+  if (sess) {
+    if (now - sess.lastAccess > BROWSER_SESSION_IDLE || now - sess.createdAt > BROWSER_SESSION_ABSOLUTE) {
+      browserSessions.delete(token);
+      return null;
+    }
+    sess.lastAccess = now;
+    return sess;
   }
-  sess.lastAccess = now;
-  return sess;
+
+  // 2. Stateless HMAC verification (for new Vercel serverless lambdas)
+  const data = verifySessionPayload(token);
+  if (!data) return null;
+  if (data.lastAccess && (now - data.lastAccess > BROWSER_SESSION_IDLE)) {
+    if (now - data.createdAt > BROWSER_SESSION_ABSOLUTE) return null;
+  }
+  data.lastAccess = now;
+  browserSessions.set(token, data);
+  return data;
 }
 
 /**

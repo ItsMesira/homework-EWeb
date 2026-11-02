@@ -12,9 +12,21 @@ function getClient() {
   if (client) return client;
 
   const { ImageAnnotatorClient } = require('@google-cloud/vision');
-  client = new ImageAnnotatorClient({
-    credentials: JSON.parse(VISION_CREDENTIALS),
-  });
+  let creds;
+  try {
+    creds = JSON.parse(VISION_CREDENTIALS);
+  } catch {
+    try {
+      creds = JSON.parse(Buffer.from(VISION_CREDENTIALS, 'base64').toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
+  if (creds && creds.private_key && creds.private_key.includes('\\n')) {
+    creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+  }
+
+  client = new ImageAnnotatorClient({ credentials: creds });
   return client;
 }
 

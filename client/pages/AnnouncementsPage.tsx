@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiClient, Announcement } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n/I18nProvider';
+import { PageHeader, Modal, Icon } from '../components/ui';
+import './AnnouncementsPage.css';
 
 export function AnnouncementsPage() {
   const { principal } = useAuth();
@@ -27,55 +29,88 @@ export function AnnouncementsPage() {
 
   const handleDelete = async (ann: Announcement) => {
     if (!confirm(`${t('delete')}: ${ann.title}?`)) return;
-    try { await apiClient.announcements.delete(ann.announcementId); load(); }
-    catch { /* ignore */ }
+    try {
+      await apiClient.announcements.delete(ann.announcementId);
+      load();
+    } catch { /* ignore */ }
   };
 
   return (
     <div className="page-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-4)' }}>
-        <h1>{t('announcements')}</h1>
-        {canManage && (
-          <button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
-            + {t('addAnnouncement')}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title={t('announcements')}
+        description={`${announcements.length} updates`}
+        actions={
+          canManage ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => { setEditing(null); setShowForm(true); }}
+            >
+              <Icon name="plus" size={14} />
+              <span>{t('addAnnouncement')}</span>
+            </button>
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <div className="state-container"><div className="spinner" /></div>
       ) : announcements.length === 0 ? (
-        <div className="state-container">
-          <div className="state-icon">📢</div>
-          <p>{t('noAnnouncements')}</p>
+        <div className="card state-container" style={{ padding: 'var(--sp-8)' }}>
+          <Icon name="announcements" size={36} className="text-muted" />
+          <p className="text-muted text-sm">{t('noAnnouncements')}</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+        <div className="announcements-list">
           {announcements.map((ann) => (
-            <div key={ann.announcementId} className="card" style={{ borderLeft: ann.isPinned ? '3px solid var(--primary)' : undefined }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', marginBottom: 'var(--sp-1)' }}>
-                    {ann.isPinned && <span>📌</span>}
-                    <span style={{ fontWeight: 'var(--fw-semibold)', fontSize: 'var(--fs-lg)' }}>{ann.title}</span>
-                    {ann.priority === 'high' && <span className="badge badge-danger">{ann.priority}</span>}
+            <div
+              key={ann.announcementId}
+              className={`announcement-card ${ann.isPinned ? 'is-pinned' : ''}`}
+            >
+              <div className="announcement-card-header">
+                <div className="announcement-main">
+                  <div className="announcement-title-bar">
+                    {ann.isPinned && (
+                      <Icon name="pin" size={15} style={{ color: 'var(--accent-amber)' }} />
+                    )}
+                    <span className="announcement-title">{ann.title}</span>
+                    {ann.priority === 'high' && (
+                      <span className="badge badge-danger">{ann.priority}</span>
+                    )}
                   </div>
+
                   {ann.body && (
-                    <div className="text-sm" style={{ whiteSpace: 'pre-wrap', marginBottom: 'var(--sp-2)' }}>
-                      {ann.body}
-                    </div>
+                    <p className="announcement-body-text">{ann.body}</p>
                   )}
-                  <div className="text-muted text-xs">
-                    {new Date(ann.publishedAt || ann.createdAt).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US')}
+
+                  <div className="announcement-footer">
+                    <Icon name="clock" size={13} />
+                    <span>
+                      {new Date(ann.publishedAt || ann.createdAt).toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US')}
+                    </span>
                   </div>
                 </div>
+
                 {canManage && (
-                  <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
-                    <button className="btn btn-outline" style={{ minHeight: '32px', fontSize: 'var(--fs-xs)' }} onClick={() => { setEditing(ann); setShowForm(true); }}>
-                      {t('edit')}
+                  <div className="announcement-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-icon"
+                      onClick={() => { setEditing(ann); setShowForm(true); }}
+                      title={t('edit')}
+                      aria-label={t('edit')}
+                    >
+                      <Icon name="edit" size={15} />
                     </button>
-                    <button className="btn btn-danger" style={{ minHeight: '32px', fontSize: 'var(--fs-xs)' }} onClick={() => handleDelete(ann)}>
-                      {t('delete')}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-icon text-danger"
+                      onClick={() => handleDelete(ann)}
+                      title={t('delete')}
+                      aria-label={t('delete')}
+                    >
+                      <Icon name="trash" size={15} />
                     </button>
                   </div>
                 )}
@@ -86,7 +121,7 @@ export function AnnouncementsPage() {
       )}
 
       {showForm && canManage && (
-        <AnnouncementForm
+        <AnnouncementModal
           editing={editing}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSaved={() => { setShowForm(false); setEditing(null); load(); }}
@@ -94,10 +129,9 @@ export function AnnouncementsPage() {
       )}
     </div>
   );
-
 }
 
-function AnnouncementForm({ editing, onClose, onSaved }: {
+function AnnouncementModal({ editing, onClose, onSaved }: {
   editing: Announcement | null;
   onClose: () => void;
   onSaved: () => void;
@@ -108,6 +142,7 @@ function AnnouncementForm({ editing, onClose, onSaved }: {
     body: editing?.body || '',
     priority: editing?.priority || 'normal',
     isPinned: editing?.isPinned || false,
+    expiresAt: editing?.expiresAt || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -131,36 +166,82 @@ function AnnouncementForm({ editing, onClose, onSaved }: {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 'var(--sp-4)' }} onClick={onClose}>
-      <div className="card" style={{ width: '100%', maxWidth: '500px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ marginBottom: 'var(--sp-4)' }}>{editing ? t('editAnnouncement') : t('addAnnouncement')}</h2>
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-          <div>
-            <label>{t('title')}</label>
-            <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+    <Modal
+      title={editing ? t('editAnnouncement') : t('addAnnouncement')}
+      onClose={onClose}
+    >
+      <form onSubmit={handleSave} className="stack gap-4">
+        <div className="field">
+          <label htmlFor="ann-modal-title">{t('title')}</label>
+          <input
+            id="ann-modal-title"
+            className="input"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="ann-modal-body">{t('body')}</label>
+          <textarea
+            id="ann-modal-body"
+            className="input"
+            rows={4}
+            value={form.body}
+            onChange={(e) => setForm({ ...form, body: e.target.value })}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="ann-modal-priority">{t('priority')}</label>
+          <select
+            id="ann-modal-priority"
+            className="input"
+            value={form.priority}
+            onChange={(e) => setForm({ ...form, priority: e.target.value })}
+          >
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="ann-modal-expiry">{t('expiryDate')} (YYYY-MM-DD)</label>
+          <input
+            id="ann-modal-expiry"
+            className="input"
+            value={form.expiresAt}
+            onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
+            placeholder="2026-12-31"
+          />
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.isPinned}
+            onChange={(e) => setForm({ ...form, isPinned: e.target.checked })}
+          />
+          <span className="text-sm">{t('pinned')}</span>
+        </label>
+
+        {error && (
+          <div className="field-error" role="alert">
+            <Icon name="alert" size={16} />
+            <span>{error}</span>
           </div>
-          <div>
-            <label>{t('body')}</label>
-            <textarea className="input" rows={5} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
-          </div>
-          <div>
-            <label>{t('priority')}</label>
-            <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-            </select>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-            <input type="checkbox" id="pinned" checked={form.isPinned} onChange={(e) => setForm({ ...form, isPinned: e.target.checked })} />
-            <label htmlFor="pinned" style={{ margin: 0 }}>{t('pinned')}</label>
-          </div>
-          {error && <div className="badge badge-danger">{error}</div>}
-          <div style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={onClose}>{t('cancel')}</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? <div className="spinner" /> : t('save')}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        <div className="cluster gap-2 justify-end mt-4">
+          <button type="button" className="btn btn-outline" onClick={onClose}>
+            {t('cancel')}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? <div className="spinner" /> : t('save')}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

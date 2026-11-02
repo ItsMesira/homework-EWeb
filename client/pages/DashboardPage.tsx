@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom';
 import { apiClient, Homework, Announcement, Analytics, ClassInfo } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n/I18nProvider';
+import { PageHeader, Icon } from '../components/ui';
+import './DashboardPage.css';
 
 export function DashboardPage() {
   const { principal } = useAuth();
@@ -22,7 +24,7 @@ export function DashboardPage() {
       apiClient.analytics.me().catch(() => null),
       apiClient.meta.class().catch(() => null),
     ]).then(([hwRes, annRes, analyticsData, classData]) => {
-      setHomework(hwRes.homework || []);
+      setHomework((hwRes.homework || []).filter((h: Homework) => !!h.homeworkId && !!h.title && h.title.trim() !== ''));
       setAnnouncements(annRes.announcements || []);
       setAnalytics(analyticsData);
       setClassInfo(classData);
@@ -43,106 +45,164 @@ export function DashboardPage() {
   const upcoming = homework.slice(0, 5);
   const pinnedAnnouncements = announcements.filter((a) => a.isPinned).slice(0, 3);
 
+  const roleLabel =
+    principal?.role === 'teacher' ? t('roleTeacher') :
+    principal?.role === 'president' ? t('rolePresident') : t('roleStudent');
+
+  // `todoCount` is the number of not-yet-completed items; `pendingCount` from
+  // the API includes completed ones, so it would double-count with doneCount.
+  const pendingCount = analytics?.todoCount ?? homework.filter((hw) => !hw.completed).length;
+  const doneCount = analytics?.doneCount ?? 0;
+  const completionRate = analytics?.completionRate ?? (
+    (pendingCount + doneCount > 0)
+      ? Math.round((doneCount / (pendingCount + doneCount)) * 100)
+      : 0
+  );
+
   return (
     <div className="page-container">
-      {/* Header */}
-      <div style={{ marginBottom: 'var(--sp-6)' }}>
-        <h1>{t('welcome')}, {principal?.user.firstName}!</h1>
-        {classInfo && (
-          <p className="text-muted text-sm mt-2">
-            {classInfo.className} • {t('roleStudent')}/{t('rolePresident')}/{t('roleTeacher')}
-            {' '}- {principal?.role === 'teacher' ? t('roleTeacher') :
-                   principal?.role === 'president' ? t('rolePresident') : t('roleStudent')}
-          </p>
-        )}
+      {/* Notion-style Page Header */}
+      <PageHeader
+        title={`${t('welcome')}, ${principal?.user.firstName || ''}!`}
+        description={
+          classInfo ? (
+            <span className="cluster gap-2">
+              <span>{classInfo.className}</span>
+              <span>•</span>
+              <span className="badge badge-muted">{roleLabel}</span>
+            </span>
+          ) : undefined
+        }
+        actions={
+          <div className="cluster gap-2">
+            <Link to="/homework" className="btn btn-primary btn-sm">
+              <Icon name="plus" size={14} />
+              <span>{t('homework')}</span>
+            </Link>
+            <Link to="/calendar" className="btn btn-outline btn-sm">
+              <Icon name="calendar" size={14} />
+              <span>{t('calendar')}</span>
+            </Link>
+          </div>
+        }
+      />
+
+      {/* Notion-style Stats Cards */}
+      <div className="dashboard-grid">
+        <div className="card stat-card">
+          <div className="stat-label">{t('pendingCount')}</div>
+          <div className="stat-value" style={{ color: pendingCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
+            {pendingCount}
+          </div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('completedCount')}</div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>
+            {doneCount}
+          </div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('completionRate')}</div>
+          <div className="stat-value">
+            {completionRate}%
+          </div>
+          <div className="stat-progress-bar">
+            <div
+              className="stat-progress-fill"
+              style={{
+                width: `${completionRate}%`,
+                backgroundColor: completionRate >= 80 ? 'var(--success)' : completionRate >= 50 ? 'var(--primary)' : 'var(--warning)',
+              }}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Stats cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 'var(--sp-3)',
-        marginBottom: 'var(--sp-6)',
-      }}>
-        <div className="card">
-          <div className="card-title">{t('pendingCount')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>
-            {analytics?.pendingCount ?? homework.length}
+      <div className="dashboard-sections">
+        {/* Upcoming Homework */}
+        <section className="card">
+          <div className="card-header">
+            <div className="cluster gap-2">
+              <Icon name="homework" size={18} className="text-muted" />
+              <h2 className="card-title">{t('upcoming')}</h2>
+            </div>
+            <Link to="/homework" className="btn btn-ghost btn-sm">
+              <span>{t('homework')}</span>
+              <Icon name="arrowRight" size={14} />
+            </Link>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">{t('completedCount')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)', color: 'var(--success)' }}>
-            {analytics?.doneCount ?? 0}
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-title">{t('completionRate')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>
-            {analytics?.completionRate ?? 0}%
-          </div>
-        </div>
-      </div>
 
-      {/* Upcoming homework */}
-      <div className="card" style={{ marginBottom: 'var(--sp-4)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-3)' }}>
-          <h3>{t('upcoming')}</h3>
-          <Link to="/homework" className="text-sm">{t('homework')} →</Link>
-        </div>
+          <div className="card-content">
+            {upcoming.length === 0 ? (
+              <div className="state-container">
+                <Icon name="check" size={28} className="text-muted" />
+                <p className="text-muted text-sm">{t('noHomework')}</p>
+              </div>
+            ) : (
+              <div className="task-list">
+                {upcoming.map((hw) => (
+                  <Link
+                    key={hw.homeworkId}
+                    to="/homework"
+                    className={`task-item ${hw.isOverdue ? 'is-overdue' : ''}`}
+                  >
+                    <div className="task-item-main">
+                      <div className="task-item-title-row">
+                        <span className="badge badge-info">{hw.subjectCode}</span>
+                        <span className="task-item-title">{hw.title}</span>
+                      </div>
+                      <div className="task-item-meta">
+                        <Icon name="clock" size={12} />
+                        <span>{hw.dueDate}</span>
+                      </div>
+                    </div>
 
-        {upcoming.length === 0 ? (
-          <div className="text-muted text-center" style={{ padding: 'var(--sp-4)' }}>
-            {t('noHomework')}
+                    <span className={`badge ${hw.isOverdue ? 'badge-danger' : 'badge-warning'}`}>
+                      {hw.isOverdue ? t('overdue') : t('pending')}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-            {upcoming.map((hw) => (
-              <div
-                key={hw.homeworkId}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: 'var(--sp-2) var(--sp-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: hw.isOverdue ? 'rgba(239,68,68,0.04)' : 'transparent',
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 'var(--fw-medium)' }}>{hw.title}</div>
-                  <div className="text-muted text-xs">
-                    {hw.subjectCode} • {hw.dueDate}
+        </section>
+
+        {/* Pinned Announcements */}
+        {pinnedAnnouncements.length > 0 && (
+          <section className="card">
+            <div className="card-header">
+              <div className="cluster gap-2">
+                <Icon name="announcements" size={18} className="text-muted" />
+                <h2 className="card-title">{t('announcements')}</h2>
+              </div>
+              <Link to="/announcements" className="btn btn-ghost btn-sm">
+                <span>{t('announcements')}</span>
+                <Icon name="arrowRight" size={14} />
+              </Link>
+            </div>
+
+            <div className="card-content">
+              <div className="task-list">
+                {pinnedAnnouncements.map((ann) => (
+                  <div key={ann.announcementId} className="announcement-item">
+                    <div className="announcement-title-row">
+                      <Icon name="pin" size={14} style={{ color: 'var(--accent-amber)' }} />
+                      <span>{ann.title}</span>
+                    </div>
+                    {ann.body && (
+                      <p className="announcement-body">
+                        {ann.body.slice(0, 140)}{ann.body.length > 140 ? '…' : ''}
+                      </p>
+                    )}
                   </div>
-                </div>
-                <span className={`badge ${hw.isOverdue ? 'badge-danger' : 'badge-warning'}`}>
-                  {hw.isOverdue ? t('overdue') : hw.dueDate}
-                </span>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          </section>
         )}
       </div>
-
-      {/* Pinned announcements */}
-      {pinnedAnnouncements.length > 0 && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-3)' }}>
-            <h3>📢 {t('announcements')}</h3>
-            <Link to="/announcements" className="text-sm">{t('announcements')} →</Link>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-            {pinnedAnnouncements.map((ann) => (
-              <div key={ann.announcementId} style={{ padding: 'var(--sp-2) var(--sp-3)', borderLeft: '3px solid var(--primary)' }}>
-                <div style={{ fontWeight: 'var(--fw-medium)' }}>
-                  {ann.isPinned && '📌 '}{ann.title}
-                </div>
-                {ann.body && <div className="text-muted text-sm">{ann.body.slice(0, 100)}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

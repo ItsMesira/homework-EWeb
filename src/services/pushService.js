@@ -5,7 +5,7 @@
 
 const crypto = require('crypto');
 const { SHEETS, DEFAULT_CLASS_ID, SESSION_SECRET } = require('../config');
-const { appendRow, readSheet, readSheetWithRows, updateRow } = require('../utils/sheets');
+const { appendRow, readSheet, readSheetWithRows, updateRow, updateRowRaw } = require('../utils/sheets');
 const { generateId, PREFIXES } = require('../utils/ids');
 const { nowISO } = require('../utils/dates');
 
@@ -68,7 +68,15 @@ async function subscribe(studentId, subscription) {
     const row = rows.find((r) => r.endpointHash === endpointHash && !r.revokedAt);
     if (row) {
       row.encryptedSubscription = encryptSubscription(subscription);
-      await updateRow(SHEETS.PUSH_SUBSCRIPTIONS, row._rowIndex, row);
+      await updateRowRaw(SHEETS.PUSH_SUBSCRIPTIONS, row._rowIndex, [
+        row.subscriptionId,
+        row.classId || DEFAULT_CLASS_ID,
+        row.studentId,
+        row.endpointHash,
+        row.encryptedSubscription,
+        row.createdAt,
+        row.revokedAt || '',
+      ]);
       return { subscriptionId: row.subscriptionId };
     }
   }
@@ -99,7 +107,15 @@ async function unsubscribe(studentId, endpoint) {
   if (!row) return false;
 
   row.revokedAt = nowISO();
-  await updateRow(SHEETS.PUSH_SUBSCRIPTIONS, row._rowIndex, row);
+  await updateRowRaw(SHEETS.PUSH_SUBSCRIPTIONS, row._rowIndex, [
+    row.subscriptionId,
+    row.classId || DEFAULT_CLASS_ID,
+    row.studentId,
+    row.endpointHash,
+    row.encryptedSubscription,
+    row.createdAt,
+    row.revokedAt,
+  ]);
   return true;
 }
 

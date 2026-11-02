@@ -91,12 +91,14 @@ function destroySession(discordId) {
 
 // ─── Session cleanup (prevents memory leak on long-running bots) ──────────────
 // Runs every 15 minutes to evict expired sessions.
-setInterval(() => {
+const sessionCleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [id, session] of sessions) {
     if (now > session.expiresAt) sessions.delete(id);
   }
 }, 15 * 60 * 1000);
+// Don't keep the process alive (matters for serverless + CLI scripts)
+if (sessionCleanupInterval.unref) sessionCleanupInterval.unref();
 
 // ─── Discord role resolution ──────────────────────────────────────────────────
 

@@ -1,0 +1,213 @@
+.timetable-card {
+  padding: 0;
+  overflow: auto;
+  background: var(--card-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.timetable-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.timetable-th {
+  padding: var(--sp-3) var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background-color: var(--surface-subtle);
+  text-align: center;
+}
+
+.timetable-period-th {
+  width: 70px;
+  color: var(--text-muted);
+}
+
+.timetable-td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: center;
+  font-size: var(--fs-sm);
+  height: 56px;
+  vertical-align: middle;
+  transition: background-color var(--transition);
+  position: relative;
+}
+
+.timetable-td:last-child {
+  border-right: none;
+}
+
+.timetable-td.is-editable {
+  cursor: pointer;
+}
+
+.timetable-td.is-editable:hover {
+  background-color: var(--surface-hover);
+}
+
+.timetable-td.is-editable:hover::after {
+  content: '✎';
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 11px;
+  color: var(--primary);
+  opacity: 0.8;
+}
+
+.timetable-period-td {
+  font-weight: var(--fw-semibold);
+  color: var(--text-muted);
+  background-color: var(--surface-subtle);
+  font-size: var(--fs-xs);
+}
+
+.timetable-cell-subject {
+  color: var(--primary);
+  background-color: var(--ghost-bg);
+  border-radius: var(--radius-xs);
+  padding: 4px;
+}
+
+.timetable-cell-code {
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+}
+
+.timetable-cell-instructor {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.timetable-cell-free {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+}
+
+.timetable-cell-special {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  background-color: rgba(0, 0, 0, 0.03);
+  border-radius: var(--radius-xs);
+  padding: 4px;
+}
+
+/* ─── Mobile Schedule ─── */
+.timetable-mobile-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.timetable-day-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  overflow-x: auto;
+  padding-bottom: var(--sp-1);
+}
+
+.timetable-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.timetable-mobile-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--card-surface);
+  transition: background-color var(--transition);
+}
+
+.timetable-mobile-card.is-editable {
+  cursor: pointer;
+}
+
+.timetable-mobile-card.is-editable:hover {
+  background-color: var(--surface-hover);
+}
+
+.timetable-mobile-period {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-btn);
+  background: var(--surface-subtle);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary);
+}
+
+.timetable-mobile-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.timetable-mobile-title {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+}
+
+.timetable-mobile-instructor {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ─── OCR Upload Dropzone ─── */
+.upload-dropzone {
+  border: 2px dashed var(--border-hover);
+  border-radius: var(--radius-card);
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  background-color: var(--surface-subtle);
+  cursor: pointer;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+.upload-dropzone:hover {
+  border-color: var(--primary);
+  background-color: var(--ghost-bg);
+}
+
+.upload-preview-img {
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .timetable-desktop-wrapper {
+    display: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .timetable-mobile-wrapper {
+    display: none !important;
+  }
+}

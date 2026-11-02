@@ -4,7 +4,7 @@
 // Files are uploaded to Cloudinary; the cloudinaryPublicId is stored here.
 
 const { SHEETS, DEFAULT_CLASS_ID, MAX_ATTACHMENTS_PER_HW } = require('../config');
-const { appendRow, readSheet } = require('../utils/sheets');
+const { appendRowRaw, readSheet } = require('../utils/sheets');
 const { generateId, PREFIXES } = require('../utils/ids');
 const { nowISO } = require('../utils/dates');
 
@@ -21,7 +21,9 @@ async function listAttachments(homeworkId) {
  */
 async function createAttachment(homeworkId, uploadResult, originalFilename, uploadedBy) {
   const attachmentId = generateId(PREFIXES.ATTACHMENT || 'att');
-  await appendRow(SHEETS.HOMEWORK_ATTACHMENTS, [
+  // RAW input: originalFilename is user-supplied and must never be evaluated
+  // as a spreadsheet formula.
+  await appendRowRaw(SHEETS.HOMEWORK_ATTACHMENTS, [
     attachmentId,
     homeworkId,
     DEFAULT_CLASS_ID,
@@ -54,15 +56,24 @@ async function createAttachment(homeworkId, uploadResult, originalFilename, uplo
  * immediately — that can be done via a cleanup job.
  */
 async function deleteAttachment(attachmentId) {
-  const { readSheetWithRows, updateRow } = require('../utils/sheets');
+  const { readSheetWithRows, updateRowRaw } = require('../utils/sheets');
   const rows = await readSheetWithRows(SHEETS.HOMEWORK_ATTACHMENTS);
   const row = rows.find((r) => r.attachmentId === attachmentId && !r.deletedAt);
   if (!row) return null;
 
-  await updateRow(SHEETS.HOMEWORK_ATTACHMENTS, row._rowIndex, {
-    ...row,
-    deletedAt: nowISO(),
-  });
+  await updateRowRaw(SHEETS.HOMEWORK_ATTACHMENTS, row._rowIndex, [
+    row.attachmentId,
+    row.homeworkId,
+    row.classId || DEFAULT_CLASS_ID,
+    row.cloudinaryPublicId,
+    row.resourceType,
+    row.format,
+    row.bytes,
+    row.originalFilename,
+    row.uploadedBy,
+    row.createdAt,
+    nowISO(),
+  ]);
   return { attachmentId, deleted: true };
 }
 

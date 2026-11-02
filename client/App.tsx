@@ -27,7 +27,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!principal) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    // Keep the query string (e.g. ?login_error=discord_not_linked) so the login
+    // page can show why the OAuth flow failed.
+    return <Navigate to={{ pathname: '/login', search: location.search }} state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

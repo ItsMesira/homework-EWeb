@@ -8,31 +8,54 @@
 //   5. Resolve principal (teacher from ADMIN_ROLE_ID, president from appointment, student otherwise)
 
 const crypto = require('crypto');
-const { CLIENT_ID, GUILD_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, OAUTH_ENABLED, TOKEN } = require('../../config');
+const { CLIENT_ID, GUILD_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, OAUTH_ENABLED, TOKEN, SESSION_SECRET } = require('../../config');
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
-// Short-lived state store: state → { createdAt, linkStudentId }
-const states = new Map();
+const STATE_TTL_MS = 10 * 60 * 1000;
 
-// Clean up expired states every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, val] of states) {
-    if (now - val.createdAt > 10 * 60 * 1000) states.delete(key);
+// OAuth state is HMAC-signed rather than stored in memory: on serverless
+// (Vercel) the callback can land on a different instance than the one that
+// issued the state, which would otherwise fail with oauth_invalid_state.
+
+function signState(data) {
+  const body = Buffer.from(JSON.stringify(data)).toString('base64url');
+  const signature = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyState(state) {
+  if (!state || typeof state !== 'string') return null;
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+
+  const [body, signature] = parts;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  if (signature.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+
+  try {
+    const data = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (!data.exp || Date.now() > data.exp) return null;
+    return data;
+  } catch {
+    return null;
   }
-}, 5 * 60 * 1000);
+}
 
 /**
- * Generate the Discord OAuth authorize URL and store a state token.
+ * Generate the Discord OAuth authorize URL and sign a state token.
  * @param {string|null} linkStudentId — if provided, this OAuth is for linking an existing account
  * @returns {{ url: string, state: string } | null}
  */
 function getAuthorizeUrl(linkStudentId = null) {
   if (!OAUTH_ENABLED) return null;
 
-  const state = crypto.randomBytes(16).toString('hex');
-  states.set(state, { createdAt: Date.now(), linkStudentId });
+  const state = signState({
+    linkStudentId: linkStudentId || null,
+    exp: Date.now() + STATE_TTL_MS,
+    nonce: crypto.randomBytes(8).toString('hex'),
+  });
 
   const params = new URLSearchParams({
     client_id:     CLIENT_ID,
@@ -105,15 +128,13 @@ async function fetchGuildMember(discordId) {
 }
 
 /**
- * Consume a state token (single-use).
+ * Verify and consume a state token.
  * @returns {{ linkStudentId: string|null } | null}
  */
 function consumeState(state) {
-  const val = states.get(state);
-  if (!val) return null;
-  states.delete(state);
-  if (Date.now() - val.createdAt > 10 * 60 * 1000) return null;
-  return { linkStudentId: val.linkStudentId };
+  const data = verifyState(state);
+  if (!data) return null;
+  return { linkStudentId: data.linkStudentId || null };
 }
 
 module.exports = { getAuthorizeUrl, exchangeCode, consumeState, fetchGuildMember, OAUTH_ENABLED };

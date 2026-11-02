@@ -37,7 +37,8 @@ function formatBangkokDate(date) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    // h23 guarantees "00:00" at midnight; hour12:false can emit "24:00"
+    hourCycle: 'h23',
   }).format(d).replace(',', '');
 }
 

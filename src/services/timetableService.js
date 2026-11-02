@@ -88,13 +88,55 @@ async function upsertCell(day, period, data, updatedBy) {
 }
 
 /**
- * Batch upsert multiple cells (for timetable import confirmation).
+ * Batch upsert multiple cells (for timetable import confirmation and paste).
  */
 async function batchUpsertCells(cells, updatedBy) {
+  if (!cells || cells.length === 0) return [];
+
+  const entries = await readSheetWithRows(SHEETS.TIMETABLE);
+  const toAppend = [];
   const results = [];
+
   for (const cell of cells) {
-    results.push(await upsertCell(cell.day, cell.period, cell, updatedBy));
+    const day = parseInt(cell.day, 10);
+    const period = parseInt(cell.period, 10);
+    if (day < 1 || day > 5 || period < 1 || period > MAX_PERIOD) continue;
+
+    const term = parseInt(cell.term || DEFAULT_TERM, 10);
+    const schoolYear = parseInt(cell.schoolYear || DEFAULT_SCHOOL_YEAR, 10);
+    const cellType = cell.cellType || 'subject';
+    const subjectCode = cellType === 'subject' ? (cell.subjectCode || '') : '';
+    const label = cellType !== 'subject' ? (cell.label || '') : '';
+    const instructor = cell.instructor || '';
+
+    const existing = entries.find(
+      (e) => e.classId === DEFAULT_CLASS_ID &&
+            parseInt(e.term) === term &&
+            parseInt(e.schoolYear) === schoolYear &&
+            parseInt(e.day) === day &&
+            parseInt(e.period) === period
+    );
+
+    if (existing) {
+      await updateRowRaw(SHEETS.TIMETABLE, existing._rowIndex, [
+        existing.timetableEntryId, DEFAULT_CLASS_ID, term, schoolYear, day, period,
+        cellType, subjectCode, label, instructor, nowISO(), updatedBy,
+      ]);
+    } else {
+      const entryId = generateId(PREFIXES.TIMETABLE);
+      toAppend.push([
+        entryId, DEFAULT_CLASS_ID, term, schoolYear, day, period,
+        cellType, subjectCode, label, instructor, nowISO(), updatedBy,
+      ]);
+    }
+
+    results.push({ day, period, cellType, subjectCode, label, instructor, term, schoolYear });
   }
+
+  if (toAppend.length > 0) {
+    await batchAppend(SHEETS.TIMETABLE, toAppend);
+  }
+
   return results;
 }
 

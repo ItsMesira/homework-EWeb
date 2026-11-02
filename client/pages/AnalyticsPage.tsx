@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { apiClient, Analytics, ClassAnalytics } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n/I18nProvider';
+import { PageHeader, Icon } from '../components/ui';
+import './AnalyticsPage.css';
 
 export function AnalyticsPage() {
   const { principal } = useAuth();
@@ -32,19 +34,31 @@ export function AnalyticsPage() {
 
   return (
     <div className="page-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-4)' }}>
-        <h1>{t('analytics')}</h1>
-        {canViewClass && (
-          <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
-            <button className={`btn ${tab === 'personal' ? 'btn-primary' : 'btn-outline'}`} style={{ minHeight: '36px', fontSize: 'var(--fs-xs)' }} onClick={() => setTab('personal')}>
-              {t('account')}
-            </button>
-            <button className={`btn ${tab === 'class' ? 'btn-primary' : 'btn-outline'}`} style={{ minHeight: '36px', fontSize: 'var(--fs-xs)' }} onClick={() => setTab('class')}>
-              {t('classAnalytics')}
-            </button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title={t('analytics')}
+        actions={
+          canViewClass ? (
+            <div className="tabs analytics-tabs">
+              <button
+                type="button"
+                className={`tab ${tab === 'personal' ? 'active' : ''}`}
+                onClick={() => setTab('personal')}
+              >
+                <Icon name="user" size={14} />
+                <span>{t('account')}</span>
+              </button>
+              <button
+                type="button"
+                className={`tab ${tab === 'class' ? 'active' : ''}`}
+                onClick={() => setTab('class')}
+              >
+                <Icon name="users" size={14} />
+                <span>{t('classAnalytics')}</span>
+              </button>
+            </div>
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <div className="state-container"><div className="spinner" /></div>
@@ -53,9 +67,9 @@ export function AnalyticsPage() {
       ) : tab === 'class' && classData && canViewClass ? (
         <ClassAnalyticsView data={classData} />
       ) : (
-        <div className="state-container">
-          <div className="state-icon">📊</div>
-          <p>{t('noResults')}</p>
+        <div className="card state-container" style={{ padding: 'var(--sp-8)' }}>
+          <Icon name="analytics" size={36} className="text-muted" />
+          <p className="text-muted text-sm">{t('noResults')}</p>
         </div>
       )}
     </div>
@@ -65,81 +79,92 @@ export function AnalyticsPage() {
 function PersonalAnalytics({ data }: { data: Analytics }) {
   const { t } = useI18n();
 
+  const rateColor =
+    data.completionRate === 100 ? 'var(--success)' :
+    data.completionRate >= 50 ? 'var(--warning)' : 'var(--danger)';
+
   return (
-    <div>
+    <div className="stack gap-6">
       {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--sp-3)', marginBottom: 'var(--sp-4)' }}>
-        <div className="card">
-          <div className="card-title">{t('completionRate')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)', color: data.completionRate === 100 ? 'var(--success)' : data.completionRate >= 50 ? 'var(--warning)' : 'var(--danger)' }}>
+      <div className="analytics-grid">
+        <div className="card stat-card">
+          <div className="stat-label">{t('completionRate')}</div>
+          <div className="stat-value" style={{ color: rateColor }}>
             {data.completionRate}%
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">{t('completedCount')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)', color: 'var(--success)' }}>{data.doneCount}</div>
-        </div>
-        <div className="card">
-          <div className="card-title">{t('pendingCount')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>{data.todoCount}</div>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="card" style={{ marginBottom: 'var(--sp-4)' }}>
-        <div className="card-title">{t('completionRate')}</div>
-        <div style={{
-          height: '12px',
-          borderRadius: 'var(--radius-pill)',
-          backgroundColor: 'rgba(0,0,0,0.06)',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            height: '100%',
-            width: `${data.completionRate}%`,
-            borderRadius: 'var(--radius-pill)',
-            backgroundColor: data.completionRate === 100 ? 'var(--success)' : data.completionRate >= 50 ? 'var(--warning)' : 'var(--danger)',
-            transition: 'width var(--transition)',
-          }} />
-        </div>
-      </div>
-
-      {/* Upcoming */}
-      {data.upcoming.length > 0 && (
-        <div className="card" style={{ marginBottom: 'var(--sp-4)' }}>
-          <h3>{t('upcoming')}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
-            {data.upcoming.map((hw) => (
-              <div key={hw.homeworkId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 'var(--fw-medium)' }}>{hw.title}</div>
-                  <div className="text-muted text-xs">{hw.subjectCode}</div>
-                </div>
-                <span className="badge badge-warning">{hw.dueDate}</span>
-              </div>
-            ))}
+          <div className="analytics-progress-wrapper">
+            <div
+              className="analytics-progress-fill"
+              style={{
+                width: `${data.completionRate}%`,
+                backgroundColor: rateColor,
+              }}
+            />
           </div>
         </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('completedCount')}</div>
+          <div className="stat-value" style={{ color: 'var(--success)' }}>
+            {data.doneCount}
+          </div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('pendingCount')}</div>
+          <div className="stat-value" style={{ color: data.todoCount > 0 ? 'var(--warning)' : 'var(--text-primary)' }}>
+            {data.todoCount}
+          </div>
+        </div>
+      </div>
+
+      {/* Upcoming deadlines */}
+      {data.upcoming.length > 0 && (
+        <section className="card">
+          <div className="card-header">
+            <h2 className="card-title">{t('upcoming')}</h2>
+          </div>
+          <div className="card-content">
+            <div className="stack gap-2">
+              {data.upcoming.map((hw) => (
+                <div key={hw.homeworkId} className="cluster justify-between items-center py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontWeight: 'var(--fw-medium)', fontSize: 'var(--fs-sm)' }}>{hw.title}</div>
+                    <div className="text-muted text-xs">{hw.subjectCode}</div>
+                  </div>
+                  <span className="badge badge-warning">{hw.dueDate}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       )}
 
       {/* Subject stats */}
       {data.subjectStats.length > 0 && (
-        <div className="card">
-          <h3>{t('perSubject')}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
-            {data.subjectStats.map((s) => (
-              <div key={s.subjectCode} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
-                <div style={{ width: '80px', fontWeight: 'var(--fw-medium)' }}>{s.subjectCode}</div>
-                <div style={{ flex: 1, height: '8px', borderRadius: 'var(--radius-pill)', backgroundColor: 'rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${s.rate}%`, backgroundColor: 'var(--primary)' }} />
-                </div>
-                <div className="text-sm" style={{ minWidth: '60px', textAlign: 'right' }}>
-                  {s.completed}/{s.total}
-                </div>
-              </div>
-            ))}
+        <section className="card">
+          <div className="card-header">
+            <h2 className="card-title">{t('perSubject')}</h2>
           </div>
-        </div>
+          <div className="card-content">
+            <div className="stack gap-1">
+              {data.subjectStats.map((s) => (
+                <div key={s.subjectCode} className="subject-rate-row">
+                  <span className="subject-rate-code">{s.subjectCode}</span>
+                  <div className="subject-rate-bar">
+                    <div
+                      className="subject-rate-fill"
+                      style={{ width: `${s.rate}%` }}
+                    />
+                  </div>
+                  <span className="subject-rate-count">
+                    {s.completed}/{s.total}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
       )}
     </div>
   );
@@ -149,50 +174,73 @@ function ClassAnalyticsView({ data }: { data: ClassAnalytics }) {
   const { t } = useI18n();
 
   return (
-    <div>
+    <div className="stack gap-6">
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--sp-3)', marginBottom: 'var(--sp-4)' }}>
-        <div className="card">
-          <div className="card-title">{t('homework')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>{data.totalHomework}</div>
+      <div className="analytics-grid">
+        <div className="card stat-card">
+          <div className="stat-label">{t('homework')}</div>
+          <div className="stat-value">{data.totalHomework}</div>
         </div>
-        <div className="card">
-          <div className="card-title">{t('pending')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>{data.totalPending}</div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('pending')}</div>
+          <div className="stat-value">{data.totalPending}</div>
         </div>
-        <div className="card">
-          <div className="card-title">{t('overdue')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)', color: 'var(--danger)' }}>{data.overdueCount}</div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('overdue')}</div>
+          <div className="stat-value" style={{ color: data.overdueCount > 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
+            {data.overdueCount}
+          </div>
         </div>
-        <div className="card">
-          <div className="card-title">{t('roleStudent')}</div>
-          <div style={{ fontSize: 'var(--fs-2xl)', fontWeight: 'var(--fw-bold)' }}>{data.totalStudents}</div>
+
+        <div className="card stat-card">
+          <div className="stat-label">{t('roleStudent')}</div>
+          <div className="stat-value">{data.totalStudents}</div>
         </div>
       </div>
 
-      {/* Export */}
-      <div style={{ marginBottom: 'var(--sp-4)', display: 'flex', gap: 'var(--sp-2)' }}>
-        <a href={apiClient.analytics.exportUrl('homework')} className="btn btn-ghost">{t('exportCSV')} — {t('homework')}</a>
-        <a href={apiClient.analytics.exportUrl('students')} className="btn btn-ghost">{t('exportCSV')} — {t('perStudent')}</a>
+      {/* CSV Export Bar */}
+      <div className="analytics-export-bar">
+        <a
+          href={apiClient.analytics.exportUrl('homework')}
+          className="btn btn-outline btn-sm"
+        >
+          <Icon name="download" size={14} />
+          <span>{t('exportCSV')} — {t('homework')}</span>
+        </a>
+        <a
+          href={apiClient.analytics.exportUrl('students')}
+          className="btn btn-outline btn-sm"
+        >
+          <Icon name="download" size={14} />
+          <span>{t('exportCSV')} — {t('perStudent')}</span>
+        </a>
       </div>
 
       {/* Per-student table */}
-      <div className="card" style={{ marginBottom: 'var(--sp-4)', overflow: 'auto' }}>
-        <h3 style={{ marginBottom: 'var(--sp-3)' }}>{t('perStudent')}</h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <section className="card analytics-table-wrapper">
+        <div style={{ padding: 'var(--sp-4) var(--sp-4) var(--sp-2)' }}>
+          <h2 className="card-title">{t('perStudent')}</h2>
+        </div>
+        <table className="analytics-table">
           <thead>
             <tr>
-              <th style={{ textAlign: 'left', padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)' }}>{t('roleStudent')}</th>
-              <th style={{ textAlign: 'right', padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)' }}>{t('completedCount')}</th>
-              <th style={{ textAlign: 'right', padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)' }}>{t('completionRate')}</th>
+              <th style={{ textAlign: 'left' }}>{t('roleStudent')}</th>
+              <th style={{ textAlign: 'right' }}>{t('completedCount')}</th>
+              <th style={{ textAlign: 'right' }}>{t('completionRate')}</th>
             </tr>
           </thead>
           <tbody>
             {data.studentStats.map((s) => (
               <tr key={s.studentId}>
-                <td style={{ padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)' }}>{s.name}</td>
-                <td style={{ padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)', textAlign: 'right' }}>{s.completed}/{s.pending}</td>
-                <td style={{ padding: 'var(--sp-2)', borderBottom: '1px solid var(--border)', fontSize: 'var(--fs-sm)', textAlign: 'right' }}>
+                <td>
+                  <span style={{ fontWeight: 'var(--fw-medium)' }}>{s.name}</span>
+                </td>
+                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                  {s.completed}/{s.pending}
+                </td>
+                <td style={{ textAlign: 'right' }}>
                   <span className={`badge ${s.rate === 100 ? 'badge-success' : s.rate >= 50 ? 'badge-warning' : 'badge-danger'}`}>
                     {s.rate}%
                   </span>
@@ -201,25 +249,35 @@ function ClassAnalyticsView({ data }: { data: ClassAnalytics }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </section>
 
-      {/* Per-subject */}
-      <div className="card">
-        <h3 style={{ marginBottom: 'var(--sp-3)' }}>{t('perSubject')}</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-          {data.subjectStats.map((s) => (
-            <div key={s.subjectCode} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
-              <div style={{ width: '80px', fontWeight: 'var(--fw-medium)' }}>{s.subjectCode}</div>
-              <div style={{ flex: 1, height: '8px', borderRadius: 'var(--radius-pill)', backgroundColor: 'rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${s.total > 0 ? (s.completed / s.total) * 100 : 0}%`, backgroundColor: 'var(--primary)' }} />
-              </div>
-              <div className="text-sm" style={{ minWidth: '60px', textAlign: 'right' }}>
-                {s.completed}/{s.total}
-              </div>
-            </div>
-          ))}
+      {/* Per-subject breakdown */}
+      <section className="card">
+        <div className="card-header">
+          <h2 className="card-title">{t('perSubject')}</h2>
         </div>
-      </div>
+        <div className="card-content">
+          <div className="stack gap-1">
+            {data.subjectStats.map((s) => {
+              const rate = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+              return (
+                <div key={s.subjectCode} className="subject-rate-row">
+                  <span className="subject-rate-code">{s.subjectCode}</span>
+                  <div className="subject-rate-bar">
+                    <div
+                      className="subject-rate-fill"
+                      style={{ width: `${rate}%` }}
+                    />
+                  </div>
+                  <span className="subject-rate-count">
+                    {s.completed}/{s.total} ({rate}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

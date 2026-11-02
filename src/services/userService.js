@@ -110,4 +110,35 @@ async function deleteUser(studentId) {
   await deleteRow(SHEETS.USERS, users[idx]._rowIndex);
 }
 
-module.exports = { listUsers, getUserByStudentId, provisionUser, updateUser, deactivateUser, deleteUser };
+/**
+ * Link a Discord ID to an existing student account (self-service from the
+ * account page). Refuses if that Discord ID already belongs to someone else,
+ * so a link attempt can never silently sign the user into another account.
+ */
+async function linkDiscordAccount(studentId, discordId) {
+  if (!studentId || !discordId) throw new Error('studentId and discordId are required');
+
+  const users = await readSheetWithRows(SHEETS.USERS);
+  const target = users.find((u) => u.studentId === studentId);
+  if (!target) throw new Error('User not found');
+
+  const conflict = users.find((u) => u.discordId === discordId && u.studentId !== studentId);
+  if (conflict) {
+    const err = new Error('This Discord account is already linked to another student');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  await updateRowRaw(SHEETS.USERS, target._rowIndex, [
+    discordId,
+    target.firstName,
+    target.lastName,
+    target.studentId,
+    target.passwordHash,
+    target.isActive === 'false' ? 'false' : 'true',
+  ]);
+
+  return { studentId, discordId };
+}
+
+module.exports = { listUsers, getUserByStudentId, provisionUser, updateUser, deactivateUser, deleteUser, linkDiscordAccount };

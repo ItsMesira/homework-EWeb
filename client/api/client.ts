@@ -101,15 +101,38 @@ class ApiError extends Error {
   }
 }
 
+let cachedCsrfToken: string | null = null;
+
 /** Read the CSRF token from the emble-csrf cookie set by the server. */
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)emble-csrf=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  const token = match ? decodeURIComponent(match[1]) : null;
+  if (token) cachedCsrfToken = token;
+  return token;
+}
+
+/** Explicitly fetch a fresh CSRF token from the server if not present in cookies. */
+export async function fetchCsrfToken(): Promise<string | null> {
+  const cookieVal = getCsrfToken();
+  if (cookieVal) return cookieVal;
+
+  try {
+    const res = await fetch('/api/auth/csrf', { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.csrfToken) {
+        cachedCsrfToken = data.csrfToken;
+        return data.csrfToken;
+      }
+    }
+  } catch { /* ignore */ }
+
+  return getCsrfToken() || cachedCsrfToken;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function api<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -118,22 +141,37 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   // Attach CSRF token for state-changing requests
   if (UNSAFE_METHODS.has(method)) {
-    const token = getCsrfToken();
+    let token = getCsrfToken() || cachedCsrfToken;
+    if (!token) {
+      token = await fetchCsrfToken();
+    }
     if (token) headers['x-csrf-token'] = token;
   }
 
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers,
     ...options,
+    headers,
   });
 
   if (!res.ok) {
     let message = `API error ${res.status}`;
+    let isCsrf = false;
     try {
       const body = await res.json();
       message = body.error || message;
+      if (res.status === 403 && /csrf/i.test(message)) {
+        isCsrf = true;
+      }
     } catch { /* not JSON */ }
+
+    // Automatic transparent retry once on CSRF mismatch or expiration
+    if (isCsrf && !isRetry) {
+      cachedCsrfToken = null;
+      await fetchCsrfToken();
+      return api<T>(path, options, true);
+    }
+
     throw new ApiError(res.status, message);
   }
 
@@ -151,7 +189,8 @@ export const apiClient = {
     api<T>(path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
   put: <T>(path: string, data?: unknown) =>
     api<T>(path, { method: 'PUT', body: data ? JSON.stringify(data) : undefined }),
-  delete: <T>(path: string) => api<T>(path, { method: 'DELETE' }),
+  delete: <T>(path: string, data?: unknown) =>
+    api<T>(path, { method: 'DELETE', body: data !== undefined ? JSON.stringify(data) : undefined }),
 
   // Auth
   auth: {
@@ -206,7 +245,43 @@ export const apiClient = {
     },
     updateCell: (term: number, schoolYear: number, day: number, period: number, data: Partial<TimetableCell>) =>
       apiClient.put(`/api/timetable/${term}/${schoolYear}/${day}/${period}`, data),
+    batchUpsert: (cells: Partial<TimetableCell>[], term?: number, schoolYear?: number) =>
+      apiClient.post<{ success: boolean; count: number; results: any[] }>('/api/timetable/batch', { cells, term, schoolYear }),
     // OCR import
+    importImage: async (file: File, term?: number, schoolYear?: number, geminiApiKey?: string, isRetry = false): Promise<{ importId: string; draft: any }> => {
+      const formData = new FormData();
+      formData.append('image', file);
+      if (term) formData.append('term', String(term));
+      if (schoolYear) formData.append('schoolYear', String(schoolYear));
+      const headers: Record<string, string> = {};
+      if (geminiApiKey) {
+        headers['x-gemini-key'] = geminiApiKey;
+      }
+      let csrf = getCsrfToken() || cachedCsrfToken;
+      if (!csrf) {
+        csrf = await fetchCsrfToken();
+      }
+      if (csrf) {
+        headers['x-csrf-token'] = csrf;
+      }
+      const res = await fetch('/api/timetable/import', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers,
+        body: formData,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const err = data.error || 'Failed to upload timetable image';
+        if (res.status === 403 && /csrf/i.test(err) && !isRetry) {
+          cachedCsrfToken = null;
+          await fetchCsrfToken();
+          return apiClient.timetable.importImage(file, term, schoolYear, geminiApiKey, true);
+        }
+        throw new Error(err);
+      }
+      return res.json() as Promise<{ importId: string; draft: any }>;
+    },
     imports: () => apiClient.get<{ imports: any[] }>('/api/timetable/imports'),
     getImport: (id: string) => apiClient.get<any>(`/api/timetable/imports/${id}`),
     confirmImport: (id: string, grid?: any, forceOverwrite?: boolean) =>
@@ -258,7 +333,7 @@ export const apiClient = {
     subscribe: (subscription: PushSubscription) =>
       apiClient.post('/api/push/subscribe', subscription.toJSON()),
     unsubscribe: (endpoint: string) =>
-      apiClient.delete('/api/push/subscribe'),
+      apiClient.delete('/api/push/subscribe', { endpoint }),
   },
 };
 

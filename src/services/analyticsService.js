@@ -16,7 +16,7 @@ async function getMyAnalytics(studentId) {
   const userRecord = users.find((u) => u.studentId === studentId);
   const now = Date.now();
 
-  const classHw = homeworkList.filter((hw) => !hw.classId || hw.classId === DEFAULT_CLASS_ID);
+  const classHw = homeworkList.filter((hw) => hw.homeworkId && (!hw.classId || hw.classId === DEFAULT_CLASS_ID));
 
   const pending = classHw.filter((hw) => {
     if (!hw.dueDate) return true;
@@ -87,7 +87,7 @@ async function getClassAnalytics(filters = {}) {
     readSheet(SHEETS.USERS),
   ]);
 
-  const classHw = homeworkList.filter((hw) => !hw.classId || hw.classId === DEFAULT_CLASS_ID);
+  const classHw = homeworkList.filter((hw) => hw.homeworkId && (!hw.classId || hw.classId === DEFAULT_CLASS_ID));
   const classUsers = users.filter((u) => u.isActive !== 'false');
   const now = Date.now();
 

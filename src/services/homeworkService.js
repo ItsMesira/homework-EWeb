@@ -16,8 +16,10 @@ async function listHomework(filters = {}, principal) {
     readSheet(SHEETS.COMPLETION),
   ]);
 
-  // Filter by class
-  let items = homeworkList.filter((hw) => !hw.classId || hw.classId === DEFAULT_CLASS_ID);
+  // Filter by valid ID, class, and non-empty title
+  let items = homeworkList.filter(
+    (hw) => hw.homeworkId && hw.title && hw.title.trim() && (!hw.classId || hw.classId === DEFAULT_CLASS_ID)
+  );
 
   // Apply date filters
   if (filters.from) {
@@ -86,7 +88,8 @@ async function listHomework(filters = {}, principal) {
 
   // Apply status filter
   if (filters.status === 'pending') {
-    items = items.filter((hw) => !hw.isOverdue);
+    // "pending" = still actionable: not overdue and not completed yet
+    items = items.filter((hw) => !hw.isOverdue && !hw.completed);
   } else if (filters.status === 'overdue') {
     items = items.filter((hw) => hw.isOverdue);
   } else if (filters.status === 'completed') {

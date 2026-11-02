@@ -37,7 +37,7 @@ const DEFAULT_SCHOOL_YEAR = 2569;
 const DEFAULT_TIMEZONE    = 'Asia/Bangkok';
 
 // ─── Determine if web features are enabled ───────────────────────────────────
-const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+const APP_URL = process.env.APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${process.env.PORT || 3000}`);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-secret-change-me-in-prod-32-chars';
 
 const WEB_ENABLED = process.env.WEB_ENABLED !== 'false';
@@ -51,8 +51,13 @@ const OAUTH_ENABLED = !!(
   DISCORD_REDIRECT_URI
 );
 
-const VISION_ENABLED  = !!process.env.VISION_CREDENTIALS;
-const CLOUDINARY_ENABLED = !!(
+const GEMINI_API_KEY      = process.env.GEMINI_API_KEY || '';
+const GEMINI_ENABLED      = !!GEMINI_API_KEY;
+
+const VISION_CREDENTIALS  = process.env.VISION_CREDENTIALS || '';
+const VISION_ENABLED      = !!VISION_CREDENTIALS;
+const OCR_ENABLED         = GEMINI_ENABLED || VISION_ENABLED;
+const CLOUDINARY_ENABLED  = !!(
   process.env.CLOUDINARY_CLOUD_NAME &&
   process.env.CLOUDINARY_API_KEY &&
   process.env.CLOUDINARY_API_SECRET
@@ -64,7 +69,7 @@ const PUSH_ENABLED = !!(
 
 // Validate Vision credentials JSON if provided
 if (VISION_ENABLED) {
-  try { JSON.parse(process.env.VISION_CREDENTIALS); }
+  try { JSON.parse(VISION_CREDENTIALS); }
   catch { console.error('VISION_CREDENTIALS is not valid JSON.'); process.exit(1); }
 }
 
@@ -73,9 +78,9 @@ module.exports = {
   TOKEN:            process.env.DISCORD_TOKEN,
   CLIENT_ID:        process.env.CLIENT_ID,
   GUILD_ID:         process.env.GUILD_ID,
-  PANEL_CHANNEL_ID: process.env.PANEL_CHANNEL_ID || '1506267894068285542',
-  SUMMARY_USER_ID:  process.env.SUMMARY_USER_ID  || '918320537443385396',
-  ADMIN_ROLE_ID:    process.env.ADMIN_ROLE_ID     || '1480919691982667826',
+  PANEL_CHANNEL_ID: process.env.PANEL_CHANNEL_ID,
+  SUMMARY_USER_ID:  process.env.SUMMARY_USER_ID,
+  ADMIN_ROLE_ID:    process.env.ADMIN_ROLE_ID,
 
   // Discord OAuth
   DISCORD_CLIENT_SECRET,
@@ -92,11 +97,14 @@ module.exports = {
   WEB_ENABLED,
   OAUTH_ENABLED,
   VISION_ENABLED,
+  GEMINI_API_KEY,
+  GEMINI_ENABLED,
+  OCR_ENABLED,
   CLOUDINARY_ENABLED,
   PUSH_ENABLED,
 
   // Vision OCR
-  VISION_CREDENTIALS: process.env.VISION_CREDENTIALS || '',
+  VISION_CREDENTIALS,
 
   // Cloudinary
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || '',

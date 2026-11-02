@@ -21,7 +21,22 @@ async function getClient() {
   const now = Date.now();
   if (sheetsClient && now - clientCreatedAt < CLIENT_TTL) return sheetsClient;
 
-  const creds = JSON.parse(GOOGLE_CREDENTIALS);
+  let creds;
+  try {
+    creds = JSON.parse(GOOGLE_CREDENTIALS);
+  } catch {
+    try {
+      creds = JSON.parse(Buffer.from(GOOGLE_CREDENTIALS, 'base64').toString('utf8'));
+    } catch {
+      throw new Error('GOOGLE_CREDENTIALS is not valid JSON or base64 string');
+    }
+  }
+
+  // Ensure newlines in PEM private key are properly formatted when set in Vercel
+  if (creds && creds.private_key && creds.private_key.includes('\\n')) {
+    creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+  }
+
   const auth  = new google.auth.GoogleAuth({
     credentials: creds,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
@@ -43,11 +58,14 @@ async function readSheet(tabName) {
   const rows = res.data.values || [];
   if (rows.length < 1) return [];
   const headers = rows[0];
-  return rows.slice(1).map((row) => {
-    const obj = {};
-    headers.forEach((h, i) => (obj[h] = row[i] ?? ''));
-    return obj;
-  });
+  return rows
+    .slice(1)
+    .filter((row) => row && row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== ''))
+    .map((row) => {
+      const obj = {};
+      headers.forEach((h, i) => (obj[h] = row[i] ?? ''));
+      return obj;
+    });
 }
 
 /**
@@ -63,12 +81,16 @@ async function readSheetWithRows(tabName) {
   const rows = res.data.values || [];
   if (rows.length < 1) return [];
   const headers = rows[0];
-  return rows.slice(1).map((row, i) => {
-    const obj = {};
-    headers.forEach((h, j) => (obj[h] = row[j] ?? ''));
-    obj._rowIndex = i + 2; // +1 for header row, +1 for 0→1 conversion
-    return obj;
-  });
+  return rows
+    .slice(1)
+    .map((row, i) => ({ row, rowIndex: i + 2 }))
+    .filter(({ row }) => row && row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== ''))
+    .map(({ row, rowIndex }) => {
+      const obj = {};
+      headers.forEach((h, j) => (obj[h] = row[j] ?? ''));
+      obj._rowIndex = rowIndex;
+      return obj;
+    });
 }
 
 // ─── Write ────────────────────────────────────────────────────────────────────

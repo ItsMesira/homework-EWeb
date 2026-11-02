@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiClient, Subject } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n/I18nProvider';
+import { PageHeader, Modal, Icon } from '../components/ui';
+import './SubjectsPage.css';
 
 export function SubjectsPage() {
   const { principal } = useAuth();
@@ -34,53 +36,91 @@ export function SubjectsPage() {
 
   const handleDelete = async (subject: Subject) => {
     if (!confirm(`${t('delete')}: ${subject.subjectCode}?`)) return;
-    try { await apiClient.subjects.delete(subject.subjectCode); load(); }
-    catch { /* ignore */ }
+    try {
+      await apiClient.subjects.delete(subject.subjectCode);
+      load();
+    } catch { /* ignore */ }
   };
 
   return (
     <div className="page-container">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--sp-4)' }}>
-        <h1>{t('subjects')}</h1>
-        {canManage && (
-          <button className="btn btn-primary" onClick={() => { setEditing(null); setShowForm(true); }}>
-            + {t('addSubject')}
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title={t('subjects')}
+        description={`${subjects.length} subjects`}
+        actions={
+          canManage ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => { setEditing(null); setShowForm(true); }}
+            >
+              <Icon name="plus" size={14} />
+              <span>{t('addSubject')}</span>
+            </button>
+          ) : undefined
+        }
+      />
 
-      <div className="card" style={{ marginBottom: 'var(--sp-4)' }}>
-        <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('search')} />
+      <div className="subjects-search-card">
+        <div style={{ position: 'relative' }}>
+          <input
+            className="input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('search')}
+            style={{ paddingLeft: '34px' }}
+          />
+          <div style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+            <Icon name="search" size={16} className="text-muted" />
+          </div>
+        </div>
       </div>
 
       {loading ? (
         <div className="state-container"><div className="spinner" /></div>
       ) : filtered.length === 0 ? (
-        <div className="state-container">
-          <div className="state-icon">📚</div>
-          <p>{t('noSubjects')}</p>
+        <div className="card state-container" style={{ padding: 'var(--sp-8)' }}>
+          <Icon name="subjects" size={36} className="text-muted" />
+          <p className="text-muted text-sm">{t('noSubjects')}</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
+        <div className="subjects-list">
           {filtered.map((s) => (
-            <div key={s.subjectCode} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-                  <span style={{ fontWeight: 'var(--fw-semibold)', fontSize: 'var(--fs-lg)' }}>{s.subjectCode}</span>
-                  {s.needsReview && <span className="badge badge-warning">{t('needsReview')}</span>}
+            <div key={s.subjectCode} className="subject-card">
+              <div className="subject-card-main">
+                <div className="subject-card-header">
+                  <span className="subject-code">{s.subjectCode}</span>
+                  {s.needsReview && (
+                    <span className="badge badge-warning">{t('needsReview')}</span>
+                  )}
                 </div>
-                <div className="text-muted text-sm">{s.subjectName || '—'}</div>
-                <div className="text-muted text-xs mt-2">
-                  {s.credits} {t('credits')} • {s.instructor || '—'}
+                <div className="subject-name">{s.subjectName || '—'}</div>
+                <div className="subject-meta">
+                  <span>{s.credits} {t('credits')}</span>
+                  <span>•</span>
+                  <span>{s.instructor || '—'}</span>
                 </div>
               </div>
+
               {canManage && (
-                <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
-                  <button className="btn btn-outline" style={{ minHeight: '32px', fontSize: 'var(--fs-xs)' }} onClick={() => { setEditing(s); setShowForm(true); }}>
-                    {t('edit')}
+                <div className="subject-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm btn-icon"
+                    onClick={() => { setEditing(s); setShowForm(true); }}
+                    title={t('edit')}
+                    aria-label={t('edit')}
+                  >
+                    <Icon name="edit" size={15} />
                   </button>
-                  <button className="btn btn-danger" style={{ minHeight: '32px', fontSize: 'var(--fs-xs)' }} onClick={() => handleDelete(s)}>
-                    {t('delete')}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm btn-icon text-danger"
+                    onClick={() => handleDelete(s)}
+                    title={t('delete')}
+                    aria-label={t('delete')}
+                  >
+                    <Icon name="trash" size={15} />
                   </button>
                 </div>
               )}
@@ -90,7 +130,7 @@ export function SubjectsPage() {
       )}
 
       {showForm && canManage && (
-        <SubjectForm
+        <SubjectModal
           editing={editing}
           onClose={() => { setShowForm(false); setEditing(null); }}
           onSaved={() => { setShowForm(false); setEditing(null); load(); }}
@@ -100,7 +140,7 @@ export function SubjectsPage() {
   );
 }
 
-function SubjectForm({ editing, onClose, onSaved }: {
+function SubjectModal({ editing, onClose, onSaved }: {
   editing: Subject | null;
   onClose: () => void;
   onSaved: () => void;
@@ -109,8 +149,9 @@ function SubjectForm({ editing, onClose, onSaved }: {
   const [form, setForm] = useState({
     subjectCode: editing?.subjectCode || '',
     subjectName: editing?.subjectName || '',
-    credits: editing?.credits || '',
+    credits: editing?.credits || '1.0',
     instructor: editing?.instructor || '',
+    needsReview: editing?.needsReview || false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -134,33 +175,81 @@ function SubjectForm({ editing, onClose, onSaved }: {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 'var(--sp-4)' }} onClick={onClose}>
-      <div className="card" style={{ width: '100%', maxWidth: '450px' }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ marginBottom: 'var(--sp-4)' }}>{editing ? t('editSubject') : t('addSubject')}</h2>
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-          <div>
-            <label>{t('subjectCode')}</label>
-            <input className="input" value={form.subjectCode} onChange={(e) => setForm({ ...form, subjectCode: e.target.value })} disabled={!!editing} required />
+    <Modal
+      title={editing ? t('editSubject') : t('addSubject')}
+      onClose={onClose}
+    >
+      <form onSubmit={handleSave} className="stack gap-4">
+        <div className="field">
+          <label htmlFor="subj-code">{t('subjectCode')}</label>
+          <input
+            id="subj-code"
+            className="input"
+            value={form.subjectCode}
+            onChange={(e) => setForm({ ...form, subjectCode: e.target.value })}
+            disabled={!!editing}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="subj-name">{t('subjectName')}</label>
+          <input
+            id="subj-name"
+            className="input"
+            value={form.subjectName}
+            onChange={(e) => setForm({ ...form, subjectName: e.target.value })}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="subj-credits">{t('credits')}</label>
+          <input
+            id="subj-credits"
+            className="input"
+            type="text"
+            value={form.credits}
+            onChange={(e) => setForm({ ...form, credits: e.target.value })}
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="subj-instructor">{t('instructor')}</label>
+          <input
+            id="subj-instructor"
+            className="input"
+            value={form.instructor}
+            onChange={(e) => setForm({ ...form, instructor: e.target.value })}
+          />
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.needsReview}
+            onChange={(e) => setForm({ ...form, needsReview: e.target.checked })}
+          />
+          <span className="text-sm">{t('needsReview')}</span>
+        </label>
+
+        {error && (
+          <div className="field-error" role="alert">
+            <Icon name="alert" size={16} />
+            <span>{error}</span>
           </div>
-          <div>
-            <label>{t('subjectName')}</label>
-            <input className="input" value={form.subjectName} onChange={(e) => setForm({ ...form, subjectName: e.target.value })} />
-          </div>
-          <div>
-            <label>{t('credits')}</label>
-            <input className="input" type="number" value={form.credits} onChange={(e) => setForm({ ...form, credits: e.target.value })} />
-          </div>
-          <div>
-            <label>{t('instructor')}</label>
-            <input className="input" value={form.instructor} onChange={(e) => setForm({ ...form, instructor: e.target.value })} />
-          </div>
-          {error && <div className="badge badge-danger">{error}</div>}
-          <div style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={onClose}>{t('cancel')}</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? <div className="spinner" /> : t('save')}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        <div className="cluster gap-2 justify-end mt-4">
+          <button type="button" className="btn btn-outline" onClick={onClose}>
+            {t('cancel')}
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? <div className="spinner" /> : t('save')}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

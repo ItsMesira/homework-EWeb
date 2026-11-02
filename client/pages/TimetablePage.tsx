@@ -29,6 +29,10 @@ export function TimetablePage() {
   // Import from image state
   const [showImportModal, setShowImportModal] = useState(false);
 
+  // Timetable → Subjects sync
+  const [syncingSubjects, setSyncingSubjects] = useState(false);
+  const [notice, setNotice] = useState('');
+
   const load = useCallback(async () => {
     try {
       const [ttRes, subRes] = await Promise.all([
@@ -44,6 +48,25 @@ export function TimetablePage() {
   }, [term, schoolYear]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleSyncSubjects = async () => {
+    if (syncingSubjects) return;
+    setSyncingSubjects(true);
+    setNotice('');
+    try {
+      const res = await apiClient.timetable.syncSubjects(term, schoolYear);
+      setNotice(
+        res.created > 0
+          ? t('subjectsCreated').replace('{n}', String(res.created))
+          : t('noNewSubjects')
+      );
+      if (res.created > 0) load();
+    } catch (err: any) {
+      setNotice(err.message || t('error'));
+    } finally {
+      setSyncingSubjects(false);
+    }
+  };
 
   const handleCellClick = (day: number, period: number, cell: TimetableCell) => {
     if (!canManage) return;
@@ -69,6 +92,16 @@ export function TimetablePage() {
             <div className="cluster gap-2">
               <button
                 type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleSyncSubjects}
+                disabled={syncingSubjects}
+                title={t('syncSubjectsHint')}
+              >
+                {syncingSubjects ? <div className="spinner" style={{ width: 14, height: 14 }} /> : <Icon name="subjects" size={14} />}
+                <span>{t('syncSubjects')}</span>
+              </button>
+              <button
+                type="button"
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowImportModal(true)}
                 title={t('importTimetableTitle')}
@@ -80,6 +113,16 @@ export function TimetablePage() {
           ) : undefined
         }
       />
+
+      {notice && (
+        <div
+          className="card"
+          role="status"
+          style={{ padding: 'var(--sp-3) var(--sp-4)', marginBottom: 'var(--sp-4)', borderLeft: '3px solid var(--primary)' }}
+        >
+          <span className="text-sm">{notice}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="state-container"><div className="spinner" /></div>
@@ -212,7 +255,11 @@ export function TimetablePage() {
           term={term}
           schoolYear={schoolYear}
           onClose={() => setShowImportModal(false)}
-          onImported={() => { setShowImportModal(false); load(); }}
+          onImported={(created) => {
+            setShowImportModal(false);
+            if (created) setNotice(t('subjectsCreated').replace('{n}', String(created)));
+            load();
+          }}
         />
       )}
     </div>
@@ -528,13 +575,15 @@ function parseSpreadsheetText(rawText: string): Record<number, Record<number, Ti
       dataRows = rows.slice(1);
     }
 
+    // Decide once for the whole block whether column 0 is the period column.
+    // Checking per row misaligns narrow pastes (e.g. only Mon–Wed copied).
+    const periodColumnRows = dataRows.filter((r) => /^\d+$/.test((r[0] || '').trim())).length;
+    const hasPeriodColumn = dataRows.length > 0 && periodColumnRows >= Math.ceil(dataRows.length * 0.6);
+
     for (let rIdx = 0; rIdx < Math.min(dataRows.length, 9); rIdx++) {
       const period = rIdx + 1;
       const row = dataRows[rIdx];
-      let startCol = 0;
-      if (row.length > 5 && isPeriodToken(row[0])) {
-        startCol = 1;
-      }
+      const startCol = hasPeriodColumn ? 1 : 0;
       for (let cIdx = startCol; cIdx < Math.min(row.length, startCol + 5); cIdx++) {
         const day = cIdx - startCol + 1;
         if (day <= 5) {
@@ -548,13 +597,13 @@ function parseSpreadsheetText(rawText: string): Record<number, Record<number, Ti
       dataRows = rows.slice(1);
     }
 
+    const dayColumnRows = dataRows.filter((r) => isDayToken(r[0] || '')).length;
+    const hasDayColumn = dataRows.length > 0 && dayColumnRows >= Math.ceil(dataRows.length * 0.6);
+
     for (let rIdx = 0; rIdx < Math.min(dataRows.length, 5); rIdx++) {
       const day = rIdx + 1;
       const row = dataRows[rIdx];
-      let startCol = 0;
-      if (row.length > 9 || isDayToken(row[0])) {
-        startCol = 1;
-      }
+      const startCol = hasDayColumn ? 1 : 0;
       for (let cIdx = startCol; cIdx < Math.min(row.length, startCol + 9); cIdx++) {
         const period = cIdx - startCol + 1;
         if (period <= 9) {
@@ -576,10 +625,13 @@ function ImportTimetableModal({
   term: number;
   schoolYear: number;
   onClose: () => void;
-  onImported: () => void;
+  onImported: (createdSubjects?: number) => void;
 }) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<'paste' | 'image'>('paste');
+
+  // Create Subjects rows for timetable codes that don't exist yet
+  const [createSubjects, setCreateSubjects] = useState(true);
 
   // Paste mode state
   const [pasteText, setPasteText] = useState('');
@@ -644,8 +696,8 @@ function ImportTimetableModal({
           });
         }
       }
-      await apiClient.timetable.batchUpsert(cells, term, schoolYear);
-      onImported();
+      const res = await apiClient.timetable.batchUpsert(cells, term, schoolYear, createSubjects);
+      onImported(res.createdSubjects?.length || 0);
     } catch (err: any) {
       setError(err.message || 'Failed to save timetable');
     } finally {
@@ -700,8 +752,13 @@ function ImportTimetableModal({
     setConfirming(true);
     setError('');
     try {
-      await apiClient.timetable.confirmImport(importDraft.importId, importDraft.draft?.grid, true);
-      onImported();
+      const res: any = await apiClient.timetable.confirmImport(
+        importDraft.importId,
+        importDraft.draft?.grid,
+        true,
+        createSubjects
+      );
+      onImported(res?.createdSubjects?.length || 0);
     } catch (err: any) {
       setError(err.message || 'Failed to confirm timetable import');
     } finally {
@@ -861,6 +918,15 @@ function ImportTimetableModal({
               <span>{error}</span>
             </div>
           )}
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={createSubjects}
+              onChange={(e) => setCreateSubjects(e.target.checked)}
+            />
+            <span className="text-sm">{t('createMissingSubjects')}</span>
+          </label>
 
           <div className="cluster gap-2 justify-between items-center mt-4">
             <button
@@ -1053,6 +1119,15 @@ function ImportTimetableModal({
               <span>{error}</span>
             </div>
           )}
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={createSubjects}
+              onChange={(e) => setCreateSubjects(e.target.checked)}
+            />
+            <span className="text-sm">{t('createMissingSubjects')}</span>
+          </label>
 
           <div className="cluster gap-2 justify-end mt-4">
             <button

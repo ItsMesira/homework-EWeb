@@ -245,8 +245,16 @@ export const apiClient = {
     },
     updateCell: (term: number, schoolYear: number, day: number, period: number, data: Partial<TimetableCell>) =>
       apiClient.put(`/api/timetable/${term}/${schoolYear}/${day}/${period}`, data),
-    batchUpsert: (cells: Partial<TimetableCell>[], term?: number, schoolYear?: number) =>
-      apiClient.post<{ success: boolean; count: number; results: any[] }>('/api/timetable/batch', { cells, term, schoolYear }),
+    batchUpsert: (cells: Partial<TimetableCell>[], term?: number, schoolYear?: number, createMissingSubjects?: boolean) =>
+      apiClient.post<{ success: boolean; count: number; results: any[]; createdSubjects: Subject[] }>(
+        '/api/timetable/batch',
+        { cells, term, schoolYear, createMissingSubjects }
+      ),
+    syncSubjects: (term?: number, schoolYear?: number) =>
+      apiClient.post<{ success: boolean; created: number; createdSubjects: Subject[] }>(
+        '/api/timetable/sync-subjects',
+        { term, schoolYear }
+      ),
     // OCR import
     importImage: async (file: File, term?: number, schoolYear?: number, geminiApiKey?: string, isRetry = false): Promise<{ importId: string; draft: any }> => {
       const formData = new FormData();
@@ -284,8 +292,8 @@ export const apiClient = {
     },
     imports: () => apiClient.get<{ imports: any[] }>('/api/timetable/imports'),
     getImport: (id: string) => apiClient.get<any>(`/api/timetable/imports/${id}`),
-    confirmImport: (id: string, grid?: any, forceOverwrite?: boolean) =>
-      apiClient.post(`/api/timetable/imports/${id}/confirm`, { grid, forceOverwrite }),
+    confirmImport: (id: string, grid?: any, forceOverwrite?: boolean, createMissingSubjects?: boolean) =>
+      apiClient.post(`/api/timetable/imports/${id}/confirm`, { grid, forceOverwrite, createMissingSubjects }),
     rejectImport: (id: string) => apiClient.post(`/api/timetable/imports/${id}/reject`),
   },
 

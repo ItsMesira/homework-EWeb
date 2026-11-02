@@ -3,7 +3,7 @@ const express = require('express');
 const multer = require('multer');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireRole } = require('../middleware/requireRole');
-const { getTimetableGrid, upsertCell, batchUpsertCells } = require('../../services/timetableService');
+const { getTimetableGrid, upsertCell, batchUpsertCells, createMissingSubjects } = require('../../services/timetableService');
 const { createImport, getImport, listImports, confirmImport, rejectImport } = require('../../services/timetableImportService');
 const { DEFAULT_TERM, DEFAULT_SCHOOL_YEAR, VISION_ENABLED, GEMINI_API_KEY, OCR_ENABLED, MAX_UPLOAD_BYTES } = require('../../config');
 const { log } = require('../middleware/logger');
@@ -50,7 +50,7 @@ router.put('/:term/:schoolYear/:day/:period', requireRole('president', 'teacher'
 // POST /api/timetable/batch — batch upsert timetable cells (president/teacher)
 router.post('/batch', requireRole('president', 'teacher'), async (req, res, next) => {
   try {
-    const { cells, term = DEFAULT_TERM, schoolYear = DEFAULT_SCHOOL_YEAR } = req.body;
+    const { cells, term = DEFAULT_TERM, schoolYear = DEFAULT_SCHOOL_YEAR, createMissingSubjects: shouldCreateSubjects } = req.body;
     if (!Array.isArray(cells) || cells.length === 0) {
       return res.status(400).json({ error: 'No cells provided' });
     }
@@ -62,7 +62,28 @@ router.post('/batch', requireRole('president', 'teacher'), async (req, res, next
     }));
     const results = await batchUpsertCells(cellsWithMeta, updatedBy);
     log(`Timetable batch upserted: ${results.length} cells by ${updatedBy}`);
-    res.json({ success: true, count: results.length, results });
+
+    // Optionally mirror timetable codes into the Subjects sheet so homework can use them
+    let createdSubjects = [];
+    if (shouldCreateSubjects) {
+      createdSubjects = await createMissingSubjects(parseInt(term, 10), parseInt(schoolYear, 10));
+      log(`Subjects created from timetable: ${createdSubjects.length}`);
+    }
+
+    res.json({ success: true, count: results.length, results, createdSubjects });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/timetable/sync-subjects — create missing Subjects from the saved timetable
+router.post('/sync-subjects', requireRole('president', 'teacher'), async (req, res, next) => {
+  try {
+    const term = parseInt(req.body?.term || DEFAULT_TERM, 10);
+    const schoolYear = parseInt(req.body?.schoolYear || DEFAULT_SCHOOL_YEAR, 10);
+    const createdSubjects = await createMissingSubjects(term, schoolYear);
+    log(`Timetable → Subjects sync: ${createdSubjects.length} created (term ${term}/${schoolYear})`);
+    res.json({ success: true, created: createdSubjects.length, createdSubjects });
   } catch (err) {
     next(err);
   }
@@ -115,8 +136,8 @@ router.get('/imports/:id', requireRole('teacher', 'president'), async (req, res,
 router.post('/imports/:id/confirm', requireRole('teacher', 'president'), async (req, res, next) => {
   try {
     const confirmedBy = req.principal.user.studentId || req.principal.user.discordId;
-    const { grid, forceOverwrite } = req.body || {};
-    const result = await confirmImport(req.params.id, grid, confirmedBy, !!forceOverwrite);
+    const { grid, forceOverwrite, createMissingSubjects: shouldCreateSubjects } = req.body || {};
+    const result = await confirmImport(req.params.id, grid, confirmedBy, !!forceOverwrite, !!shouldCreateSubjects);
     log(`Timetable import confirmed: ${req.params.id}, ${result.upserted} cells`);
     res.json(result);
   } catch (err) {

@@ -3,6 +3,7 @@ const { SHEETS, DEFAULT_CLASS_ID, DEFAULT_TERM, DEFAULT_SCHOOL_YEAR } = require(
 const { readSheet, readSheetWithRows, appendRowRaw, updateRowRaw, deleteRow, batchAppend } = require('../utils/sheets');
 const { nowISO } = require('../utils/dates');
 const { generateId, PREFIXES } = require('../utils/ids');
+const { normalizeSubjectCode } = require('./subjectService');
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_MAP = { 1: 'จันทร์', 2: 'อังคาร', 3: 'พุธ', 4: 'พฤหัสบดี', 5: 'ศุกร์' };
@@ -140,6 +141,63 @@ async function batchUpsertCells(cells, updatedBy) {
   return results;
 }
 
+/**
+ * Create Subjects rows for every subject code that appears in the timetable
+ * but is missing from the Subjects sheet.
+ *
+ * Timetable imports only write timetable cells; without this the codes exist
+ * in the grid but homework can't reference them ("Subject not found").
+ *
+ * @param {number} term
+ * @param {number} schoolYear
+ * @returns {Promise<Array<{ subjectCode, subjectName, instructor }>>} created rows
+ */
+async function createMissingSubjects(term = DEFAULT_TERM, schoolYear = DEFAULT_SCHOOL_YEAR) {
+  const [entries, subjects] = await Promise.all([
+    getTimetable(term, schoolYear),
+    readSheet(SHEETS.SUBJECTS),
+  ]);
+
+  const existing = new Set(
+    subjects
+      .filter((s) => !s.classId || s.classId === DEFAULT_CLASS_ID)
+      .map((s) => normalizeSubjectCode(s.subjectCode))
+      .filter(Boolean)
+  );
+
+  // Collect distinct codes, preferring the first cell that carries a label
+  const missing = new Map();
+  for (const entry of entries) {
+    if (entry.cellType !== 'subject') continue;
+    const code = normalizeSubjectCode(entry.subjectCode);
+    if (!code || existing.has(code)) continue;
+
+    const prev = missing.get(code);
+    if (!prev) {
+      missing.set(code, { subjectCode: code, subjectName: entry.label || '', instructor: entry.instructor || '' });
+    } else {
+      // Fill gaps from later cells (e.g. a code repeated with a name/teacher)
+      if (!prev.subjectName && entry.label) prev.subjectName = entry.label;
+      if (!prev.instructor && entry.instructor) prev.instructor = entry.instructor;
+    }
+  }
+
+  if (missing.size === 0) return [];
+
+  const created = [...missing.values()];
+  // One API call for all new rows: [code, name, credits, instructor, classId, needsReview]
+  await batchAppend(SHEETS.SUBJECTS, created.map((s) => [
+    s.subjectCode,
+    s.subjectName,
+    '',
+    s.instructor,
+    DEFAULT_CLASS_ID,
+    s.subjectName ? 'false' : 'true', // flag rows with no readable name for review
+  ]));
+
+  return created;
+}
+
 module.exports = {
   DAYS,
   DAY_MAP,
@@ -148,4 +206,5 @@ module.exports = {
   getTimetableGrid,
   upsertCell,
   batchUpsertCells,
+  createMissingSubjects,
 };

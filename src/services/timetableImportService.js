@@ -15,7 +15,7 @@ const { generateId, PREFIXES } = require('../utils/ids');
 const { nowISO } = require('../utils/dates');
 const { detectDocumentText } = require('../server/integrations/vision');
 const { uploadBuffer } = require('../server/integrations/cloudinary');
-const { batchUpsertCells, getTimetableGrid, MAX_PERIOD } = require('./timetableService');
+const { batchUpsertCells, getTimetableGrid, createMissingSubjects, MAX_PERIOD } = require('./timetableService');
 const { normalizeSubjectCode } = require('./subjectService');
 
 const DAYS = 5; // Mon–Fri
@@ -452,8 +452,9 @@ async function listImports() {
  * @param {object} editedGrid — optional edited grid (overrides the draft)
  * @param {string} confirmedBy
  * @param {boolean} forceOverwrite — overwrite duplicate cells
+ * @param {boolean} shouldCreateSubjects — also add missing subjects to the Subjects sheet
  */
-async function confirmImport(importId, editedGrid, confirmedBy, forceOverwrite = false) {
+async function confirmImport(importId, editedGrid, confirmedBy, forceOverwrite = false, shouldCreateSubjects = false) {
   const rows = await readSheetWithRows(SHEETS.TIMETABLE_IMPORTS);
   const row = rows.find((r) => r.importId === importId);
   if (!row) throw new Error('Import not found');
@@ -486,6 +487,12 @@ async function confirmImport(importId, editedGrid, confirmedBy, forceOverwrite =
   // Batch upsert
   const results = await batchUpsertCells(cells, confirmedBy);
 
+  // Optionally mirror the imported subject codes into the Subjects sheet
+  let createdSubjects = [];
+  if (shouldCreateSubjects) {
+    createdSubjects = await createMissingSubjects(term, schoolYear);
+  }
+
   // Update import status
   row.status = 'confirmed';
   row.confirmedAt = nowISO();
@@ -495,7 +502,7 @@ async function confirmImport(importId, editedGrid, confirmedBy, forceOverwrite =
     'confirmed', row.draftJson, row.revision, row.createdBy, row.createdAt, row.updatedAt, row.confirmedAt,
   ]);
 
-  return { importId, status: 'confirmed', upserted: results.length, results };
+  return { importId, status: 'confirmed', upserted: results.length, results, createdSubjects };
 }
 
 /**
